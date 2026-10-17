@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     if (improved) p["best_" + game] = String(score);
     const total = GAMES.reduce((s, g) => s + (p["best_" + g] ? Number(p["best_" + g]) : 0), 0);
     const now = Date.now();
-    const fields = ["nick", nick, "last", String(now), "total", String(total)];
+    const fields = ["nick", p.nick || nick, "last", String(now), "total", String(total)];
     if (!p.created) fields.push("created", String(now));
     if (improved) fields.push("best_" + game, String(score), "detail_" + game, detail);
     const r = await pipeline([
@@ -28,11 +28,13 @@ export default async function handler(req, res) {
       ["HINCRBY", key, "plays", "1"],
       ["ZADD", "gc:total", String(total), pid],
       ["LPUSH", "gc:log", JSON.stringify({ pid, nick, game, score, detail, t: now })],
+      ["LPUSH", "gc:h:" + pid, JSON.stringify({ game, score, detail, t: now })],
+      ["LTRIM", "gc:h:" + pid, "0", "49"],
       ["LTRIM", "gc:log", "0", "999"],
       ["ZREVRANK", "gc:total", pid],
       ["ZCARD", "gc:total"],
     ]);
-    send(res, 200, { ok: true, total, improved, best: improved ? score : prev, rank: Number(r[5]) + 1, players: Number(r[6]) });
+    send(res, 200, { ok: true, total, improved, best: improved ? score : prev, rank: Number(r[7]) + 1, players: Number(r[8]) });
   } catch (e) {
     fail(res, e);
   }

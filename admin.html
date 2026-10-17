@@ -63,6 +63,7 @@ th{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:1.5px;c
 th:nth-child(1),th:nth-child(2),td:nth-child(1),td:nth-child(2){text-align:left}
 td{padding:10px;border-bottom:1px solid #20262f;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.nick{font-family:var(--display);font-weight:800;font-size:19px;text-transform:uppercase}
+td.nick a.ig{display:block;font-family:var(--body);font-size:13px;font-weight:600;color:var(--teal);text-transform:none;text-decoration:none}td.nick a.ig:hover{text-decoration:underline}
 td.nick small{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:6px;font-weight:500}
 td.total{font-family:var(--display);font-weight:900;font-size:20px;color:var(--gold)}
 td .none{color:#4b5562}
@@ -176,7 +177,7 @@ function render(){
     const p=ps[i], d=document.createElement("div");
     d.className="step p"+(i+1)+(p?"":" empty");
     d.innerHTML='<span class="pos">'+(i+1)+'</span><span class="nm"></span><span class="tag"></span><span class="pts"></span>';
-    d.children[1].textContent=p?p.nick:"—"; d.children[2].textContent=p?"#"+p.tag+" · "+p.plays+" partidas":"Libre";
+    d.children[1].textContent=p?p.nick:"—"; d.children[2].textContent=p?(p.ig?"@"+p.ig+" · ":"#"+p.tag+" · ")+p.plays+" partidas":"Libre";
     d.children[3].textContent=p?fmt(p.total)+" pts":"";
     pod.appendChild(d);
   });
@@ -188,7 +189,7 @@ function render(){
     const cells=[String(i+1), null, fmt(p.total), ...GAMES.map(g=>p.best[g]!=null?fmt(p.best[g]):null), String(p.plays), time(p.last), null];
     cells.forEach((c,k)=>{
       const td=document.createElement("td");
-      if(k===1){ td.className="nick"; td.textContent=p.nick; const s=document.createElement("small"); s.textContent="#"+p.tag; td.appendChild(s); }
+      if(k===1){ td.className="nick"; td.textContent=p.nick; const s=document.createElement("small"); s.textContent="#"+p.tag; td.appendChild(s); if(p.ig){ const a=document.createElement("a"); a.className="ig"; a.href="https://www.instagram.com/"+encodeURIComponent(p.ig)+"/"; a.target="_blank"; a.rel="noopener"; a.textContent="@"+p.ig; td.appendChild(a); } }
       else if(k===2){ td.className="total"; td.textContent=c; }
       else if(k===10){ const b=document.createElement("button"); b.className="btn ghost small"; b.textContent= pendingRemove===p.pid?"¿Confirmar?":"Quitar"; b.onclick=()=>removeP(p.pid); td.appendChild(b); }
       else if(c==null){ td.innerHTML='<span class="none">—</span>'; }
@@ -242,9 +243,9 @@ $("#reset").onclick=async()=>{
 };
 $("#csv").onclick=()=>{
   if(!data) return;
-  const head=["Puesto","Apodo","ID","Total",...GAMES.map(g=>NAMES[g]),"Partidas","Primera vez","Última vez"];
+  const head=["Puesto","Apodo","Instagram","ID","Total",...GAMES.map(g=>NAMES[g]),"Partidas","Primera vez","Última vez"];
   const esc=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.tag,p.total,...GAMES.map(g=>p.best[g]??""),p.plays,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
+  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.ig?"@"+p.ig:"",p.tag,p.total,...GAMES.map(g=>p.best[g]??""),p.plays,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
   const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="ranking-gaming-city.csv"; document.body.appendChild(a); a.click(); a.remove();
 };

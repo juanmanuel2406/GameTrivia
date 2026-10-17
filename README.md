@@ -2,6 +2,14 @@
 
 Minijuegos de Valorant para el evento de Gaming City. Es una sola página estática (`index.html`), sin build ni dependencias.
 
+## Registro e Instagram
+La primera vez que alguien entra ve un cartel que le pide seguir a **@gamingcitycomputacion** y **@gamingcitybelgrano** (tiene que abrir las dos). Después crea su jugador con apodo, usuario de Instagram y un PIN de 4 números. Con el @ y el PIN puede entrar desde otro celular. Instagram no permite comprobar automáticamente quién sigue a quién, así que el panel muestra el @ de cada jugador para chequearlo antes de entregar el premio.
+
+Cada jugador tiene **Mi registro** con su total, su puesto, su mejor marca en cada juego y sus últimas partidas.
+
+## Duelo 1v1 online
+Empareja a dos personas que estén buscando rival al mismo tiempo. La partida va directo entre los dos celulares (WebRTC con PeerJS). El emparejamiento usa la misma base Upstash. Si una red bloquea la conexión entre dispositivos, el juego avisa y se puede jugar contra el bot.
+
 ## Juegos
 - **Duelo 1v1**: shooter 2D contra un bot (Hierro, Oro o Radiante). Gana el primero en llegar a 5 rounds.
 - **Trivia**: 12 preguntas al azar de un banco de 45.
