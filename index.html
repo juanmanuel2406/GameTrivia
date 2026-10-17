@@ -1,0 +1,1321 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta property="og:title" content="Gaming City Arcade">
+<meta property="og:description" content="Trivia de Valorant, duelo 1v1 y minijuegos del evento de Gaming City.">
+<meta property="og:image" content="https://www.gamingcity.com.ar/empresa/logo400x400.jpg">
+<link rel="icon" href="https://www.gamingcity.com.ar/empresa/logo400x400.jpg">
+<link rel="apple-touch-icon" href="https://www.gamingcity.com.ar/empresa/logo400x400.jpg">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Gaming City Arcade</title>
+<meta name="description" content="Trivia y minijuegos de Valorant para el evento de Gaming City.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una sola columna tipo "pantalla de arcade" — header con marca, lobby de juegos en grilla, cada juego ocupa la pantalla. Look oscuro fijo (evento / proyector). */
+:root{
+  --ink:#0d1015; --panel:#151a21; --panel-2:#1c232c; --line:#2a323d;
+  --text:#ede8df; --muted:#8e98a5; --red:#ff4655; --red-deep:#b8283a;
+  --teal:#3fe0c5; --gold:#f5c24b;
+  --display:'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+  --body:'Barlow', 'Segoe UI', system-ui, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --cut:14px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:16px;line-height:1.5;
+  background-image:radial-gradient(1200px 500px at 85% -10%, rgba(255,70,85,.14), transparent 60%),
+  linear-gradient(transparent 0 calc(100% - 1px), rgba(255,255,255,.025) 0);background-size:auto, 100% 48px;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:0 48px}
+
+/* ---------- Header / marca ---------- */
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:flex-end;gap:12px;background:none;border:0;padding:0;text-align:left}
+.skyline{display:flex;align-items:flex-end;gap:3px;height:38px}
+.skyline i{display:block;width:7px;background:var(--red);transform-origin:bottom;animation:rise .7s cubic-bezier(.2,.9,.3,1.2) both}
+.skyline i:nth-child(1){height:40%;animation-delay:.05s}.skyline i:nth-child(2){height:75%;animation-delay:.12s}
+.skyline i:nth-child(3){height:55%;animation-delay:.19s}.skyline i:nth-child(4){height:100%;animation-delay:.26s;background:var(--text)}
+.skyline i:nth-child(5){height:65%;animation-delay:.33s}
+@keyframes rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.wordmark{font-family:var(--display);font-weight:900;font-size:30px;line-height:.85;letter-spacing:.5px;text-transform:uppercase}
+.wordmark small{display:block;font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:2.5px;color:var(--muted);margin-top:6px}
+.brand-logo{display:block;width:46px;height:46px;border-radius:10px;object-fit:cover;box-shadow:0 0 0 2px var(--red);animation:logoIn .6s cubic-bezier(.2,.9,.3,1.3) both}
+@keyframes logoIn{from{transform:rotate(-12deg) scale(.4);opacity:0}to{transform:none;opacity:1}}
+.hero-logo{width:84px;height:84px;border-radius:16px;object-fit:cover;box-shadow:0 0 0 3px var(--red),0 18px 40px rgba(255,70,85,.25);margin-bottom:14px;animation:logoIn .8s .1s cubic-bezier(.2,.9,.3,1.3) both}
+.head-actions{display:flex;gap:8px;align-items:center}
+.chip{font-family:var(--mono);font-size:11px;letter-spacing:1px;border:1px solid var(--line);background:var(--panel);padding:8px 10px;text-transform:uppercase;color:var(--muted)}
+.chip b{color:var(--text);font-weight:700}
+
+/* ---------- Botones con esquina cortada ---------- */
+.btn{position:relative;border:0;background:var(--red);color:#fff;font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:1.5px;text-transform:uppercase;padding:14px 26px;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%);transition:transform .12s, background .15s}
+.btn:hover{background:#ff5c69}.btn:active{transform:translateY(1px) scale(.99)}
+.btn.ghost{background:var(--panel-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.ghost:hover{background:#242c37}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.link{background:none;border:0;color:var(--muted);font-family:var(--mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;padding:6px 0}
+.link:hover{color:var(--text)}
+
+/* ---------- Hero / lobby ---------- */
+.hero{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:end;padding-block:40px 28px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:3px;color:var(--red);text-transform:uppercase}
+h1{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:clamp(52px, 10vw, 112px);line-height:.86;margin:10px 0 0;letter-spacing:-.5px;text-wrap:balance}
+h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s both}
+@keyframes slice{0%{clip-path:inset(0 0 60% 0);transform:translateX(-6px)}25%{clip-path:inset(40% 0 0 0);transform:translateX(5px)}50%{clip-path:inset(0 0 20% 0);transform:translateX(-2px)}75%,100%{clip-path:inset(0);transform:none}}
+.hero p{color:var(--muted);max-width:44ch;margin:0}
+.player{background:var(--panel);border:1px solid var(--line);padding:20px;display:grid;gap:10px;clip-path:polygon(0 0,100% 0,100% calc(100% - 22px),calc(100% - 22px) 100%,0 100%)}
+.player label{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.player input{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--text);font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:1px;padding:10px 12px;text-transform:uppercase}
+.player input:focus{outline:none;border-color:var(--red)}
+.player .hint{font-size:13px;color:var(--muted);margin:0}
+
+.games{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.game-card{position:relative;text-align:left;background:var(--panel);border:1px solid var(--line);padding:22px 22px 20px;display:grid;gap:8px;min-height:170px;overflow:hidden;transition:border-color .15s, transform .15s}
+.game-card:hover{border-color:var(--red);transform:translateY(-2px)}
+.game-card .tag{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.game-card h2{font-family:var(--display);font-weight:900;font-size:40px;line-height:.9;text-transform:uppercase;margin:0}
+.game-card p{margin:0;color:var(--muted);font-size:14px;max-width:38ch}
+.game-card .go{position:absolute;right:18px;bottom:16px;font-family:var(--display);font-weight:800;font-size:16px;letter-spacing:1px;color:var(--red);text-transform:uppercase}
+.game-card .glyph{position:absolute;right:-8px;top:-10px;font-family:var(--display);font-weight:900;font-size:120px;line-height:1;color:rgba(255,255,255,.035);pointer-events:none}
+.game-card.feature{grid-column:1/-1;min-height:200px;background:
+  linear-gradient(90deg,rgba(255,70,85,.18),transparent 60%),
+  repeating-linear-gradient(135deg,rgba(255,255,255,.025) 0 2px,transparent 2px 14px),var(--panel);border-color:rgba(255,70,85,.5)}
+.game-card.feature h2{font-size:56px}
+.game-card .new{justify-self:start;font-family:var(--mono);font-size:10px;letter-spacing:2px;background:var(--red);color:#fff;padding:3px 8px}
+/* Duelo */
+.duel-wrap{position:relative;touch-action:none;user-select:none;-webkit-user-select:none}
+#duel-cv{display:block;width:100%;aspect-ratio:16/10;max-width:100%;background:#12161c;border:1px solid var(--line);touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair}
+.d-banner{position:absolute;left:50%;top:14%;transform:translateX(-50%);text-align:center;pointer-events:none;background:rgba(13,16,21,.82);border-left:4px solid var(--red);padding:10px 22px;max-width:90%}
+.d-banner h3{font-family:var(--display);font-weight:900;font-size:clamp(26px,5vw,48px);line-height:1;margin:0;text-transform:uppercase}
+.d-banner p{margin:4px 0 0;color:var(--muted);font-family:var(--mono);font-size:12px;letter-spacing:1px}
+.d-btns{position:absolute;right:max(10px, env(safe-area-inset-right, 0px));bottom:10px;display:flex;gap:8px}
+.d-btns .btn{font-size:15px;padding:10px 16px;--cut:9px;opacity:.92}
+.d-btns .btn:disabled{opacity:.45}
+.stat.you b{color:var(--teal)} .stat.foe b{color:var(--red)}
+.setup{display:grid;gap:18px;background:var(--panel);border:1px solid var(--line);padding:clamp(18px,3vw,30px)}
+.setup h3{font-family:var(--display);font-weight:900;font-size:clamp(34px,6vw,54px);line-height:.9;text-transform:uppercase;margin:0}
+.diffs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.diff{background:var(--ink);border:1px solid var(--line);padding:14px;text-align:left;display:grid;gap:2px}
+.diff b{font-family:var(--display);font-weight:900;font-size:26px;text-transform:uppercase}
+.diff span{font-size:13px;color:var(--muted)}
+.diff[aria-pressed="true"]{border-color:var(--red);background:rgba(255,70,85,.1)}
+.howto{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;font-size:14px;color:var(--muted)}
+.howto div{border-top:1px solid var(--line);padding-top:10px}
+.howto b{display:block;color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.rotate-hint{display:none;font-size:13px;color:var(--gold);margin-top:8px}
+@media (max-width:760px) and (orientation:portrait){.rotate-hint{display:block}}
+@media (orientation:landscape) and (max-height:540px){#duel{padding-block:6px}#duel .bar{flex-wrap:nowrap}#duel .stats{flex-wrap:nowrap}#duel .stat span{font-size:9px}#duel .bar{margin-bottom:8px}#duel .stat{padding:3px 8px;min-width:0}#duel .stat b{font-size:20px}#duel-cv{width:min(100%, calc((100vh - 84px) * 1.6));margin:0 auto}}
+.game-card.host{background:linear-gradient(135deg,var(--panel),#1d1418)}
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+
+/* ---------- Pantallas de juego ---------- */
+.screen{padding-block:24px}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--line);padding:6px 12px;display:grid;min-width:88px}
+.stat span{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.stat b{font-family:var(--display);font-weight:900;font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+.stat.hot b{color:var(--gold)}
+.timer{height:6px;background:var(--panel-2);margin-bottom:22px;overflow:hidden}
+.timer i{display:block;height:100%;background:var(--red);transform-origin:left;width:100%}
+.q-cat{font-family:var(--mono);font-size:12px;letter-spacing:2.5px;color:var(--red);text-transform:uppercase}
+.q-text{font-family:var(--display);font-weight:800;font-size:clamp(30px,5.4vw,52px);line-height:1;text-transform:uppercase;margin:8px 0 24px;text-wrap:balance;max-width:24ch}
+.options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.opt{display:flex;align-items:center;gap:14px;text-align:left;background:var(--panel);border:1px solid var(--line);padding:16px 18px;font-size:18px;font-weight:600;min-height:64px;transition:border-color .12s, background .12s, transform .12s}
+.opt:hover:not(:disabled){border-color:var(--text);transform:translateX(2px)}
+.opt .k{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line);width:28px;height:28px;display:grid;place-items:center;flex:none}
+.opt.right{background:rgba(63,224,197,.14);border-color:var(--teal)}
+.opt.right .k{color:var(--teal);border-color:var(--teal)}
+.opt.wrong{background:rgba(255,70,85,.14);border-color:var(--red);animation:shake .35s}
+.opt:disabled{cursor:default}
+@keyframes shake{25%{transform:translateX(-6px)}50%{transform:translateX(5px)}75%{transform:translateX(-3px)}}
+.feedback{min-height:28px;margin-top:16px;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:1px;text-transform:uppercase}
+.feedback.ok{color:var(--teal)}.feedback.bad{color:var(--red)}
+.pop{animation:pop .4s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+
+/* Adiviná el agente */
+.clues{display:grid;gap:10px;margin:6px 0 22px}
+.clue{display:flex;gap:14px;align-items:baseline;background:var(--panel);border:1px solid var(--line);padding:14px 16px}
+.clue span{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;min-width:92px}
+.clue b{font-size:19px;font-weight:600}
+.clue.locked b{color:var(--muted);filter:blur(5px);user-select:none}
+.clue.new{animation:pop .35s}
+
+/* Puntería */
+.arena{position:relative;height:min(62vh,520px);background:
+  linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px) 0 0/40px 40px,
+  linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px) 0 0/40px 40px, var(--panel);
+  border:1px solid var(--line);overflow:hidden;touch-action:manipulation;cursor:crosshair;user-select:none}
+.target{position:absolute;border:0;padding:0;border-radius:50%;background:radial-gradient(circle,#fff 0 14%,var(--red) 15% 40%,#fff 41% 52%,var(--red) 53% 100%);box-shadow:0 0 0 3px rgba(255,70,85,.25);animation:spawn .18s ease-out both}
+@keyframes spawn{from{transform:scale(0)}to{transform:scale(1)}}
+.hitfx{position:absolute;font-family:var(--display);font-weight:900;font-size:22px;color:var(--teal);pointer-events:none;animation:floatup .6s ease-out forwards}
+.hitfx.miss{color:var(--red)}
+@keyframes floatup{to{transform:translateY(-34px);opacity:0}}
+.arena-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px}
+.arena-msg h3{font-family:var(--display);font-weight:900;font-size:clamp(34px,6vw,60px);text-transform:uppercase;margin:0 0 6px;line-height:.95}
+.arena-msg p{color:var(--muted);margin:0 0 18px}
+
+/* Reflejos */
+.pad{width:100%;height:min(58vh,460px);border:1px solid var(--line);display:grid;place-items:center;text-align:center;padding:20px;transition:background .08s;user-select:none;touch-action:manipulation}
+.pad h3{font-family:var(--display);font-weight:900;font-size:clamp(40px,8vw,84px);line-height:.9;text-transform:uppercase;margin:0}
+.pad p{margin:10px 0 0;font-size:16px}
+.pad.idle{background:var(--panel)}
+.pad.wait{background:#1a1f27}.pad.wait h3{color:var(--muted)}
+.pad.go{background:var(--red)}.pad.go p{color:#fff}
+.pad.early{background:#3a1f12}.pad.early h3{color:var(--gold)}
+.pad.show{background:var(--panel-2)}
+.pad.show h3{color:var(--teal);font-variant-numeric:tabular-nums}
+.tries{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.tries span{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:4px 10px;font-variant-numeric:tabular-nums}
+
+/* Resultado */
+.result{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;align-items:start}
+.ticket{position:relative;background:var(--panel);border:1px solid var(--line);padding:26px;overflow:hidden;clip-path:polygon(0 0,100% 0,100% calc(100% - 28px),calc(100% - 28px) 100%,0 100%)}
+.ticket::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:var(--red)}
+.ticket .who{font-family:var(--display);font-weight:900;font-size:clamp(36px,6vw,58px);line-height:.9;text-transform:uppercase;margin:6px 0 2px;overflow-wrap:anywhere}
+.ticket .score{font-family:var(--display);font-weight:900;font-size:clamp(70px,13vw,128px);line-height:.85;color:var(--gold);font-variant-numeric:tabular-nums}
+.ticket .score small{font-size:.28em;color:var(--muted);letter-spacing:1px}
+.ticket dl{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:18px 0 0;font-size:14px}
+.ticket dt{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;align-self:center}
+.ticket dd{margin:0;font-weight:600}
+.code{font-family:var(--mono);font-weight:700;font-size:26px;letter-spacing:4px;color:var(--teal)}
+.rank-title{font-family:var(--display);font-weight:800;font-size:26px;text-transform:uppercase;color:var(--red);margin:0}
+.side{display:grid;gap:14px}
+.side .box{background:var(--panel);border:1px solid var(--line);padding:18px}
+.side h3{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:0 0 10px;font-weight:500}
+.best{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.best li{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}
+.best li b{font-family:var(--display);font-size:20px;font-weight:800}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.shards{position:fixed;inset:0;pointer-events:none;z-index:20}
+
+/* Presentador */
+.host-stage{background:var(--panel);border:1px solid var(--line);padding:clamp(20px,4vw,44px);min-height:56vh;display:grid;align-content:space-between;gap:24px}
+.host-stage .q-text{font-size:clamp(34px,6.4vw,72px);max-width:22ch}
+.host-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.host-opts div{font-size:clamp(18px,2.6vw,28px);font-weight:600;padding:14px 18px;border:1px solid var(--line);background:var(--ink);display:flex;gap:14px;align-items:center}
+.host-opts div .k{font-family:var(--display);font-weight:900;color:var(--red);font-size:1.2em}
+.host-opts div.right{border-color:var(--teal);background:rgba(63,224,197,.12)}
+.host-opts div.dim{opacity:.35}
+.host-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.verify{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end}
+.verify label{display:grid;gap:4px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.verify input,.verify select{background:var(--ink);border:1px solid var(--line);color:var(--text);padding:10px;font-family:var(--mono);font-size:16px;width:100%;min-width:0}
+.verify-out{margin-top:10px;font-family:var(--display);font-weight:800;font-size:22px;text-transform:uppercase;min-height:30px}
+.verify-out.ok{color:var(--teal)}.verify-out.bad{color:var(--red)}
+.live-q{border:1px dashed var(--gold);padding:14px 16px;color:var(--gold);font-size:15px}
+.live-q b{font-family:var(--display);font-size:22px;text-transform:uppercase;letter-spacing:.5px;display:block;color:var(--text)}
+
+@media (max-width:760px){
+  .hero{grid-template-columns:1fr;padding-block:26px 20px}
+  .games{grid-template-columns:1fr}
+  .game-card{min-height:0}
+  .options,.host-opts{grid-template-columns:1fr}
+  .result{grid-template-columns:1fr}
+  .verify{grid-template-columns:1fr 1fr}
+  .wordmark{font-size:24px}
+  .chip.hide-sm{display:none}
+  .game-card.feature h2{font-size:42px}
+  .diffs{grid-template-columns:1fr}
+  .howto{grid-template-columns:1fr}
+  .q-text{margin-bottom:16px}
+  .opt{min-height:56px;font-size:17px;padding:12px 14px}
+  .btn{font-size:18px;padding:13px 20px}
+  .stat{min-width:0;padding:5px 10px}
+  .stat b{font-size:24px}
+  .hero-logo{width:64px;height:64px}
+  .verify-out{font-size:18px}
+}
+@media (max-width:420px){ .head-actions .chip{padding:7px 8px;font-size:10px} .wordmark small{display:none} }
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <button class="brand" id="home-btn" aria-label="Volver al inicio">
+      <span id="logo-slot" style="display:flex;align-items:center;gap:12px">
+        <img class="brand-logo" id="brand-logo" src="https://www.gamingcity.com.ar/empresa/logo400x400.jpg" alt="Gaming City" width="46" height="46" hidden>
+        <span class="skyline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="wordmark">Gaming City<small>Valorant · Arcade</small></span>
+      </span>
+    </button>
+    <div class="head-actions">
+      <span class="chip hide-sm" id="who-chip">Agente: <b id="who-name">—</b></span>
+      <button class="chip" id="sound-btn" aria-pressed="true">Sonido: <b>ON</b></button>
+    </div>
+  </header>
+
+  <!-- ============ LOBBY ============ -->
+  <section id="lobby">
+    <div class="hero">
+      <div>
+        <img class="hero-logo" id="hero-logo" src="https://www.gamingcity.com.ar/empresa/logo400x400.jpg" alt="Logo de Gaming City" width="84" height="84" hidden>
+        <div class="eyebrow">Evento Valorant · Gaming City</div>
+        <h1>Probá tu <span class="slice">nivel</span> de Radiante</h1>
+      </div>
+      <form class="player" id="player-form" autocomplete="off">
+        <label for="nick">Tu apodo</label>
+        <input id="nick" maxlength="14" placeholder="TENZ_DE_LANUS" required>
+        <p class="hint">Con este nombre aparecés en tu ticket de puntaje. Mostráselo al presentador para reclamar premios.</p>
+      </form>
+    </div>
+    <div class="games">
+      <button class="game-card feature" data-go="duel">
+        <span class="glyph" aria-hidden="true">1v1</span>
+        <span class="new">Nuevo</span>
+        <span class="tag">Primero a 5 rounds · contra un bot</span>
+        <h2>Duelo 1v1</h2>
+        <p>Shooter 2D en un mapa con coberturas. Frená para disparar preciso, usá el dash y ganale al bot en Hierro, Oro o Radiante.</p>
+        <span class="go">Jugar →</span>
+      </button>
+      <button class="game-card" data-go="trivia">
+        <span class="glyph" aria-hidden="true">?</span>
+        <span class="tag">12 preguntas · 15 s cada una</span>
+        <h2>Trivia</h2>
+        <p>Agentes, mapas, armas y la historia del competitivo. Más rápido respondés, más puntos sumás.</p>
+        <span class="go">Jugar →</span>
+      </button>
+      <button class="game-card" data-go="agent">
+        <span class="glyph" aria-hidden="true">A</span>
+        <span class="tag">8 rondas · 3 pistas</span>
+        <h2>Adiviná el agente</h2>
+        <p>Rol, país y habilidad. Si lo sacás con una sola pista, te llevás el puntaje máximo.</p>
+        <span class="go">Jugar →</span>
+      </button>
+      <button class="game-card" data-go="aim">
+        <span class="glyph" aria-hidden="true">+</span>
+        <span class="tag">30 segundos</span>
+        <h2>Puntería</h2>
+        <p>Tocá los blancos antes de que desaparezcan. Cada vez son más chicos y más rápidos.</p>
+        <span class="go">Jugar →</span>
+      </button>
+      <button class="game-card" data-go="react">
+        <span class="glyph" aria-hidden="true">7s</span>
+        <span class="tag">5 intentos · en milisegundos</span>
+        <h2>Defuse</h2>
+        <p>Esperá a que la pantalla se ponga roja y tocá lo más rápido posible. Si te adelantás, perdés el intento.</p>
+        <span class="go">Jugar →</span>
+      </button>
+      <button class="game-card host" data-go="host" style="grid-column:1/-1">
+        <span class="glyph" aria-hidden="true">MC</span>
+        <span class="tag">Para el escenario</span>
+        <h2>Modo presentador</h2>
+        <p>Preguntas en pantalla grande para la tribuna, respuesta con un toque, y el verificador de tickets para entregar premios.</p>
+        <span class="go">Abrir →</span>
+      </button>
+    </div>
+    <div class="foot">
+      <span>Juego de fans para el evento de Gaming City. Valorant es una marca de Riot Games.</span>
+      <span>Datos actualizados a octubre de 2026</span>
+    </div>
+  </section>
+
+  <!-- ============ TRIVIA ============ -->
+  <section id="trivia" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats">
+        <div class="stat"><span>Pregunta</span><b id="t-num">1/12</b></div>
+        <div class="stat"><span>Puntos</span><b id="t-score">0</b></div>
+        <div class="stat hot"><span>Racha</span><b id="t-streak">0</b></div>
+      </div>
+    </div>
+    <div class="timer"><i id="t-timer"></i></div>
+    <div class="q-cat" id="t-cat"></div>
+    <div class="q-text" id="t-q"></div>
+    <div class="options" id="t-opts"></div>
+    <div class="feedback" id="t-fb" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ ADIVINÁ EL AGENTE ============ -->
+  <section id="agent" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats">
+        <div class="stat"><span>Ronda</span><b id="a-num">1/8</b></div>
+        <div class="stat"><span>Puntos</span><b id="a-score">0</b></div>
+      </div>
+    </div>
+    <div class="q-cat">¿Quién es este agente?</div>
+    <div class="clues" id="a-clues"></div>
+    <div class="options" id="a-opts"></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
+      <button class="btn ghost" id="a-more">Otra pista (−300)</button>
+      <div class="feedback" id="a-fb" style="margin:0" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ============ PUNTERÍA ============ -->
+  <section id="aim" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats">
+        <div class="stat"><span>Tiempo</span><b id="m-time">30.0</b></div>
+        <div class="stat"><span>Aciertos</span><b id="m-hits">0</b></div>
+        <div class="stat"><span>Precisión</span><b id="m-acc">—</b></div>
+        <div class="stat hot"><span>Puntos</span><b id="m-score">0</b></div>
+      </div>
+    </div>
+    <div class="arena" id="arena">
+      <div class="arena-msg" id="m-msg">
+        <div>
+          <h3>Calentá la muñeca</h3>
+          <p>30 segundos. Tocar fuera de un blanco resta puntos.</p>
+          <button class="btn" id="m-start">Empezar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DEFUSE / REFLEJOS ============ -->
+  <section id="react" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats">
+        <div class="stat"><span>Intento</span><b id="r-num">0/5</b></div>
+        <div class="stat hot"><span>Mejor</span><b id="r-best">—</b></div>
+      </div>
+    </div>
+    <button class="pad idle" id="pad">
+      <div><h3 id="pad-h">Spike plantada</h3><p id="pad-p">Tocá para empezar. Cuando se ponga roja, defusá.</p></div>
+    </button>
+    <div class="tries" id="r-tries"></div>
+  </section>
+
+  <!-- ============ DUELO 1v1 ============ -->
+  <section id="duel" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats" id="d-stats">
+        <div class="stat you"><span>Vos</span><b id="d-php">100</b></div>
+        <div class="stat"><span>Rounds</span><b id="d-score">0 – 0</b></div>
+        <div class="stat foe"><span>Bot</span><b id="d-bhp">100</b></div>
+        <div class="stat"><span>Balas</span><b id="d-ammo">25</b></div>
+        <div class="stat"><span>Tiempo</span><b id="d-time">45</b></div>
+      </div>
+    </div>
+    <div class="setup" id="d-setup">
+      <div>
+        <div class="eyebrow">Duelo 1v1</div>
+        <h3>Elegí el rango del bot</h3>
+      </div>
+      <div class="diffs">
+        <button class="diff" data-diff="hierro"><b>Hierro</b><span>Reacciona lento y erra mucho. Puntaje ×1</span></button>
+        <button class="diff" data-diff="oro" aria-pressed="true"><b>Oro</b><span>Un rival parejo. Puntaje ×1,5</span></button>
+        <button class="diff" data-diff="radiante"><b>Radiante</b><span>Reacción de pro. Puntaje ×2,2</span></button>
+      </div>
+      <div class="howto">
+        <div><b>Celular</b>Pulgar izquierdo en la mitad izquierda para moverte. Pulgar derecho en la mitad derecha: arrastrá para apuntar y disparar.</div>
+        <div><b>Compu</b>WASD para moverte, mouse para apuntar, click para disparar. Shift o espacio para el dash, R para recargar.</div>
+        <div><b>Como en Valorant</b>Si disparás corriendo, las balas se abren. Frená y tirá ráfagas cortas.</div>
+        <div><b>Reglas</b>100 de vida, 34 de daño por bala. Rounds de 45 segundos. Gana el primero en llegar a 5.</div>
+      </div>
+      <div>
+        <button class="btn" id="d-start">Empezar duelo</button>
+        <p class="rotate-hint">Tip: girá el celular en horizontal para ver el mapa más grande.</p>
+      </div>
+    </div>
+    <div class="duel-wrap" id="d-play" hidden>
+      <canvas id="duel-cv" width="960" height="600" aria-label="Mapa del duelo"></canvas>
+      <div class="d-banner pop" id="d-banner" hidden><h3>Round 1</h3><p></p></div>
+      <div class="d-btns">
+        <button class="btn ghost" id="d-reload">Recargar</button>
+        <button class="btn" id="d-dash">Dash</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RESULTADO ============ -->
+  <section id="result" class="screen" hidden>
+    <div class="result">
+      <div class="ticket" id="ticket">
+        <div class="eyebrow" id="res-game">Trivia</div>
+        <div class="who" id="res-who">JUGADOR</div>
+        <p class="rank-title" id="res-rank">Radiante</p>
+        <div class="score" id="res-score">0</div>
+        <dl>
+          <dt>Detalle</dt><dd id="res-detail">—</dd>
+          <dt>Hora</dt><dd id="res-time">—</dd>
+          <dt>Código</dt><dd class="code" id="res-code">——————</dd>
+        </dl>
+      </div>
+      <div class="side">
+        <div class="box">
+          <h3>¿Cómo reclamo el premio?</h3>
+          <p style="margin:0;font-size:15px">Sacale captura a este ticket o mostrale el celular al presentador. El código prueba que el puntaje es real.</p>
+        </div>
+        <div class="box">
+          <h3>Tus mejores marcas en este celular</h3>
+          <ul class="best" id="res-best"></ul>
+        </div>
+        <div class="actions">
+          <button class="btn" id="res-again">Jugar de nuevo</button>
+          <button class="btn ghost" data-home>Otro juego</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRESENTADOR ============ -->
+  <section id="host" class="screen" hidden>
+    <div class="bar">
+      <button class="link" data-home>← Salir</button>
+      <div class="stats">
+        <div class="stat"><span>Pregunta</span><b id="h-num">1</b></div>
+      </div>
+    </div>
+    <div class="host-stage">
+      <div>
+        <div class="q-cat" id="h-cat"></div>
+        <div class="q-text" id="h-q"></div>
+      </div>
+      <div class="host-opts" id="h-opts"></div>
+      <div class="host-controls">
+        <div class="actions">
+          <button class="btn ghost" id="h-prev">← Anterior</button>
+          <button class="btn" id="h-reveal">Mostrar respuesta</button>
+          <button class="btn ghost" id="h-next">Siguiente →</button>
+        </div>
+        <span class="chip">Teclado: ← → y espacio</span>
+      </div>
+    </div>
+
+    <div class="side" style="margin-top:18px">
+      <div class="live-q">
+        <b>Pregunta en vivo: gran final de Champions Shanghái (18 de octubre)</b>
+        LOUD ya está en la final. ¿Quién gana el título y se lleva el millón de dólares? Hacé que la tribuna apueste por un equipo.
+      </div>
+      <div class="box">
+        <h3>Verificar ticket de un jugador</h3>
+        <form class="verify" id="verify-form" autocomplete="off">
+          <label>Juego
+            <select id="v-game">
+              <option value="trivia">Trivia</option>
+              <option value="agent">Adiviná el agente</option>
+              <option value="aim">Puntería</option>
+              <option value="react">Defuse</option>
+              <option value="duel">Duelo 1v1</option>
+            </select>
+          </label>
+          <label>Apodo<input id="v-name" maxlength="14" required></label>
+          <label>Puntaje<input id="v-score" inputmode="numeric" required></label>
+          <button class="btn" type="submit" style="font-size:16px;padding:11px 18px">Verificar</button>
+          <label style="grid-column:1/-1">Código del ticket<input id="v-code" maxlength="6" required style="text-transform:uppercase;letter-spacing:4px"></label>
+        </form>
+        <div class="verify-out" id="v-out" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<canvas class="shards" id="shards" aria-hidden="true"></canvas>
+
+<script>
+/* ===== Logo opcional: pegá acá la imagen del logo de Gaming City como data URL (o una ruta relativa si lo hosteás) ===== */
+const LOGO_SRC = "https://www.gamingcity.com.ar/empresa/logo400x400.jpg";
+
+/* ================== DATOS ================== */
+const QUESTIONS = [
+  {c:"Lo básico", q:"¿Qué empresa desarrolla Valorant?", a:["Riot Games","Valve","Blizzard","Epic Games"]},
+  {c:"Lo básico", q:"¿En qué año salió oficialmente Valorant?", a:["2020","2019","2021","2018"]},
+  {c:"Lo básico", q:"¿Cuántos rounds hay que ganar para cerrar una partida competitiva sin overtime?", a:["13","12","16","15"]},
+  {c:"Lo básico", q:"¿Cómo se llama la bomba que se planta en Valorant?", a:["Spike","Núcleo","C4","Orbe"]},
+  {c:"Lo básico", q:"¿Cuántos rounds se juegan antes de cambiar de lado?", a:["12","10","13","15"]},
+  {c:"Lo básico", q:"En overtime, ¿por cuánta diferencia hay que ganar?", a:["2 rounds","1 round","3 rounds","No hay overtime"]},
+  {c:"Spike", q:"¿Cuántos segundos tarda la Spike en explotar después de plantarla?", a:["45","30","40","60"]},
+  {c:"Spike", q:"¿Cuántos segundos lleva un defuse completo?", a:["7","5","10","3,5"]},
+  {c:"Economía", q:"¿Cuál es el máximo de créditos que podés acumular?", a:["9000","12000","8000","10000"]},
+  {c:"Armas", q:"¿Cuánto cuesta la Vandal?", a:["2900","2500","3100","3200"]},
+  {c:"Armas", q:"¿Cuál es la pistola con la que arrancás cada round?", a:["Classic","Ghost","Sheriff","Frenzy"]},
+  {c:"Rangos", q:"¿Cuál es el rango más alto del competitivo?", a:["Radiante","Inmortal","Ascendente","Diamante"]},
+  {c:"Rangos", q:"¿Qué rango se agregó entre Diamante e Inmortal?", a:["Ascendente","Leyenda","Maestro","Élite"]},
+  {c:"Agentes", q:"¿De qué país es Jett?", a:["Corea del Sur","Japón","China","Filipinas"]},
+  {c:"Agentes", q:"¿De qué país es Raze?", a:["Brasil","México","Colombia","Portugal"]},
+  {c:"Agentes", q:"¿De qué país es Reyna?", a:["México","Brasil","España","Colombia"]},
+  {c:"Agentes", q:"¿De qué país es Tejo?", a:["Colombia","México","Chile","Perú"]},
+  {c:"Agentes", q:"¿De qué país es Killjoy?", a:["Alemania","Noruega","Suecia","Francia"]},
+  {c:"Agentes", q:"¿De qué país es Neon?", a:["Filipinas","Tailandia","Corea del Sur","India"]},
+  {c:"Agentes", q:"¿De qué país es Clove?", a:["Escocia","Irlanda","Inglaterra","Gales"]},
+  {c:"Agentes", q:"¿Qué agente es un robot?", a:["KAY/O","Deadlock","Killjoy","Cypher"]},
+  {c:"Agentes", q:"¿Cuál de estos agentes es Centinela?", a:["Cypher","Sova","Omen","Neon"]},
+  {c:"Agentes", q:"¿Qué agente usa criaturas como Wingman y Dizzy?", a:["Gekko","Skye","Fade","Tejo"]},
+  {c:"Agentes", q:"¿Qué agente puede revivir a un compañero con su ulti?", a:["Sage","Skye","Phoenix","Harbor"]},
+  {c:"Agentes", q:"¿Qué agente tiene la ulti Blade Storm?", a:["Jett","Yoru","Reyna","Iso"]},
+  {c:"Agentes", q:"¿Qué agente puede tirar humo incluso después de morir?", a:["Clove","Omen","Brimstone","Astra"]},
+  {c:"Agentes", q:"¿Qué agente pone estrellas en el mapa desde su forma astral?", a:["Astra","Omen","Harbor","Viper"]},
+  {c:"Agentes", q:"¿Qué agente tiene una cámara espía?", a:["Cypher","Killjoy","Sova","Chamber"]},
+  {c:"Agentes", q:"¿Qué agente se cura devorando las almas de los enemigos?", a:["Reyna","Phoenix","Iso","Yoru"]},
+  {c:"Agentes", q:"¿Qué agente llegó al juego con el Acto 2 de 2026?", a:["Miks","Veto","Waylay","Tejo"]},
+  {c:"Mapas", q:"¿Cuántos sitios de plantado tiene Haven?", a:["3","2","4","1"]},
+  {c:"Mapas", q:"¿Qué mapa tiene teletransportadores y no tiene mid?", a:["Bind","Split","Icebox","Sunset"]},
+  {c:"Mapas", q:"¿En qué mapa te podés caer al vacío por los bordes?", a:["Abyss","Breeze","Lotus","Pearl"]},
+  {c:"Mapas", q:"¿Qué mapa está inspirado en Venecia, Italia?", a:["Ascent","Pearl","Split","Fracture"]},
+  {c:"Mapas", q:"¿Qué mapa es una ciudad bajo el agua inspirada en Portugal?", a:["Pearl","Breeze","Icebox","Lotus"]},
+  {c:"Mapas", q:"¿Cuál es el mapa nuevo que se sumó en 2026?", a:["Summit","Corrode","Abyss","Sunset"]},
+  {c:"Mapas", q:"¿Qué mapa tiene tres sitios y puertas giratorias?", a:["Lotus","Haven","Bind","Ascent"]},
+  {c:"Competitivo", q:"¿Quién ganó el primer Champions, en 2021?", a:["Acend","Gambit","Sentinels","OpTic"]},
+  {c:"Competitivo", q:"¿Qué equipo brasileño ganó Champions 2022?", a:["LOUD","FURIA","MIBR","paiN"]},
+  {c:"Competitivo", q:"¿Qué equipo ganó Champions 2024?", a:["EDward Gaming","Team Heretics","Sentinels","Paper Rex"]},
+  {c:"Competitivo", q:"¿Qué equipo ganó Champions 2025?", a:["NRG","Fnatic","G2 Esports","Paper Rex"]},
+  {c:"Competitivo", q:"¿En qué ciudad se juega Champions 2026?", a:["Shanghái","Seúl","París","Los Ángeles"]},
+  {c:"Competitivo", q:"¿Qué equipo ganó Masters London 2026?", a:["Leviatán","Paper Rex","Fnatic","Sentinels"]},
+  {c:"Competitivo", q:"¿Qué equipo ganó Masters Santiago 2026?", a:["Nongshim RedForce","Paper Rex","LOUD","Team Vitality"]},
+  {c:"Competitivo", q:"¿Qué organización de esports fundó el Kun Agüero?", a:["KRÜ Esports","Leviatán","9z","Isurus"]},
+];
+
+const AGENTS = [
+  ["Jett","Duelista","Corea del Sur","Dash con viento y una ulti de cuchillas"],
+  ["Phoenix","Duelista","Inglaterra","Fuego que lo cura y una ulti que le da otra vida"],
+  ["Reyna","Duelista","México","Se cura devorando almas de enemigos"],
+  ["Raze","Duelista","Brasil","Un robot explosivo y un lanzacohetes de ulti"],
+  ["Yoru","Duelista","Japón","Teletransportes y clones para engañar"],
+  ["Neon","Duelista","Filipinas","Corre a toda velocidad cargada de electricidad"],
+  ["Iso","Duelista","China","Un escudo que frena un disparo y una ulti de duelo uno contra uno"],
+  ["Sova","Iniciador","Rusia","Flecha de reconocimiento y un dron"],
+  ["Breach","Iniciador","Suecia","Aturde a los enemigos a través de las paredes"],
+  ["Skye","Iniciador","Australia","Manda un tigre de Tasmania y cura al equipo"],
+  ["KAY/O","Iniciador","Una línea temporal alternativa","Un cuchillo que suprime habilidades"],
+  ["Fade","Iniciador","Turquía","Pesadillas y una criatura que persigue rastros"],
+  ["Gekko","Iniciador","Estados Unidos","Criaturas que se recogen y se reutilizan"],
+  ["Tejo","Iniciador","Colombia","Misiles guiados y un dron sigiloso"],
+  ["Brimstone","Controlador","Estados Unidos","Ataque orbital desde el cielo"],
+  ["Viper","Controlador","Estados Unidos","Venenos tóxicos y una ulti que cubre todo de humo"],
+  ["Omen","Controlador","Desconocido","Se teletransporta por las sombras a cualquier lugar del mapa"],
+  ["Astra","Controlador","Ghana","Pone estrellas en el mapa desde su forma astral"],
+  ["Harbor","Controlador","India","Muros y escudos de agua"],
+  ["Clove","Controlador","Escocia","Tira humo incluso estando muerto"],
+  ["Killjoy","Centinela","Alemania","Una torreta y nanoenjambres"],
+  ["Cypher","Centinela","Marruecos","Cámara espía y cables trampa"],
+  ["Sage","Centinela","China","Muro de hielo, curación y resurrección"],
+  ["Chamber","Centinela","Francia","Armas propias, francotirador y teletransporte"],
+  ["Deadlock","Centinela","Noruega","Una red de nanocable que atrapa al enemigo"],
+  ["Vyse","Centinela","Desconocido","Trampas de metal líquido"],
+].map(([n,r,c,h])=>({n,r,c,h}));
+
+const GAME_NAMES = {duel:"Duelo 1v1", trivia:"Trivia", agent:"Adiviná el agente", aim:"Puntería", react:"Defuse"};
+
+/* ================== UTILIDADES ================== */
+const $ = s => document.querySelector(s);
+const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+const store = {
+  get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+};
+function ticketCode(game,name,score){
+  const s = "GC26|" + game + "|" + String(name).trim().toUpperCase() + "|" + Math.round(Number(score));
+  let h = 2166136261;
+  for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h>>>0).toString(36).toUpperCase() + "XXXXXX").slice(0,6);
+}
+
+/* Sonido */
+let audioCtx = null, soundOn = store.get("gc_sound", true);
+function beep(freq=600, dur=.08, type="square", vol=.05){
+  if(!soundOn) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=vol;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t=audioCtx.currentTime; g.gain.exponentialRampToValueAtTime(.0001,t+dur); o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+const sfx = {
+  ok(){ beep(880,.09,"square"); setTimeout(()=>beep(1320,.12,"square"),70); },
+  bad(){ beep(160,.22,"sawtooth",.06); },
+  hit(){ beep(1200,.04,"triangle",.07); },
+  tick(){ beep(500,.03,"square",.03); },
+  win(){ [660,880,990,1320].forEach((f,i)=>setTimeout(()=>beep(f,.12,"square"),i*90)); }
+};
+function renderSound(){ const b=$("#sound-btn"); b.innerHTML = "Sonido: <b>"+(soundOn?"ON":"OFF")+"</b>"; b.setAttribute("aria-pressed", String(soundOn)); }
+$("#sound-btn").addEventListener("click",()=>{ soundOn=!soundOn; store.set("gc_sound",soundOn); renderSound(); if(soundOn) sfx.hit(); });
+
+/* Logo */
+/* Muestra el logo real cuando carga; si no carga (sin internet o bloqueado) queda el logotipo de respaldo */
+["#brand-logo","#hero-logo"].forEach(sel=>{
+  const img=$(sel); if(!img) return;
+  const ok=()=>{ img.hidden=false; if(sel==="#brand-logo"){ const sk=document.querySelector(".skyline"); if(sk) sk.hidden=true; } };
+  if(img.complete && img.naturalWidth) ok(); else { img.addEventListener("load",ok); img.addEventListener("error",()=>img.remove()); }
+});
+
+/* ================== NAVEGACIÓN ================== */
+const SCREENS = ["lobby","trivia","agent","aim","react","duel","result","host"];
+let cleanup = null;
+function show(id){
+  if (cleanup){ cleanup(); cleanup=null; }
+  SCREENS.forEach(s => $("#"+s).hidden = (s!==id));
+  window.scrollTo({top:0});
+}
+function nick(){ return ($("#nick").value.trim() || "").toUpperCase(); }
+function requireNick(){
+  if (nick()) return true;
+  const inp=$("#nick"); inp.focus(); inp.style.borderColor="var(--red)";
+  inp.placeholder="PONÉ TU APODO"; sfx.bad();
+  inp.animate([{transform:"translateX(-6px)"},{transform:"translateX(6px)"},{transform:"none"}],{duration:300});
+  return false;
+}
+$("#nick").value = store.get("gc_nick","");
+function syncNick(){ const n=nick(); $("#who-name").textContent = n || "—"; store.set("gc_nick", n); }
+$("#nick").addEventListener("input",()=>{ $("#nick").style.borderColor=""; syncNick(); });
+$("#player-form").addEventListener("submit",e=>{ e.preventDefault(); $("#nick").blur(); });
+syncNick();
+
+document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>{
+  const g=b.dataset.go;
+  if (g!=="host" && !requireNick()) return;
+  start(g);
+}));
+document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>show("lobby")));
+$("#home-btn").addEventListener("click",()=>show("lobby"));
+
+let lastGame = "trivia";
+function start(g){
+  lastGame = g;
+  ({trivia:startTrivia, agent:startAgent, aim:startAim, react:startReact, duel:startDuel, host:startHost})[g]();
+}
+
+/* ================== TRIVIA ================== */
+function startTrivia(){
+  show("trivia");
+  const qs = shuffle(QUESTIONS).slice(0,12);
+  let i=0, score=0, streak=0, correct=0, raf=0, deadline=0, locked=false;
+  const LIMIT=15000;
+  const timerBar=$("#t-timer");
+  function render(){
+    locked=false;
+    const q=qs[i];
+    $("#t-num").textContent=(i+1)+"/"+qs.length;
+    $("#t-cat").textContent=q.c;
+    const qt=$("#t-q"); qt.textContent=q.q; qt.classList.remove("pop"); void qt.offsetWidth; qt.classList.add("pop");
+    $("#t-fb").textContent=""; $("#t-fb").className="feedback";
+    const box=$("#t-opts"); box.innerHTML="";
+    shuffle(q.a).forEach((txt,k)=>{
+      const b=document.createElement("button"); b.className="opt";
+      b.innerHTML='<span class="k">'+"ABCD"[k]+'</span><span></span>';
+      b.lastChild.textContent=txt; b.dataset.v=txt;
+      b.addEventListener("click",()=>answer(b));
+      box.appendChild(b);
+    });
+    deadline=performance.now()+LIMIT;
+    cancelAnimationFrame(raf); tick();
+  }
+  let lastSec=99;
+  function tick(){
+    const left=Math.max(0,deadline-performance.now());
+    timerBar.style.transform="scaleX("+(left/LIMIT)+")";
+    timerBar.style.background = left<4000 ? "var(--gold)" : "var(--red)";
+    const sec=Math.ceil(left/1000); if(sec<=3 && sec!==lastSec && sec>0){ sfx.tick(); } lastSec=sec;
+    if(left<=0){ answer(null); return; }
+    raf=requestAnimationFrame(tick);
+  }
+  function answer(btn){
+    if(locked) return; locked=true; cancelAnimationFrame(raf);
+    const q=qs[i], right=q.a[0], left=Math.max(0,deadline-performance.now());
+    const btns=[...document.querySelectorAll("#t-opts .opt")];
+    btns.forEach(b=>{ b.disabled=true; if(b.dataset.v===right) b.classList.add("right"); });
+    const fb=$("#t-fb");
+    if(btn && btn.dataset.v===right){
+      streak++; correct++;
+      const pts = 500 + Math.round(500*left/LIMIT) + (streak>=2 ? 100*(streak-1) : 0);
+      score+=pts; fb.textContent="+"+pts+(streak>=2?"  ·  racha x"+streak:""); fb.className="feedback ok pop"; sfx.ok();
+    } else {
+      streak=0; if(btn) btn.classList.add("wrong");
+      fb.textContent = btn ? "Era: "+right : "Se acabó el tiempo · Era: "+right; fb.className="feedback bad pop"; sfx.bad();
+    }
+    $("#t-score").textContent=score; $("#t-streak").textContent=streak;
+    setTimeout(()=>{ i++; if(i<qs.length) render(); else finish("trivia", score, correct+"/"+qs.length+" correctas", rankFor("trivia",score)); }, 1500);
+  }
+  $("#t-score").textContent="0"; $("#t-streak").textContent="0";
+  render();
+  cleanup=()=>{ cancelAnimationFrame(raf); locked=true; };
+}
+
+/* ================== ADIVINÁ EL AGENTE ================== */
+function startAgent(){
+  show("agent");
+  const rounds = shuffle(AGENTS).slice(0,8);
+  let i=0, score=0, hints=1, used=1, locked=false, hits=0, timer=0;
+  const labels=["Rol","Origen","Habilidad"];
+  function clueVals(a){ return [a.r,a.c,a.h]; }
+  function renderClues(fresh){
+    const a=rounds[i], vals=clueVals(a), box=$("#a-clues"); box.innerHTML="";
+    vals.forEach((v,k)=>{
+      const d=document.createElement("div"); d.className="clue"+(k>=hints?" locked":"")+(k===hints-1&&fresh?" new":"");
+      d.innerHTML="<span>"+labels[k]+"</span><b></b>"; d.lastChild.textContent = k<hints ? v : "••••••••••••";
+      box.appendChild(d);
+    });
+    $("#a-more").disabled = hints>=3 || locked;
+  }
+  function render(){
+    locked=false; hints=1; used=1;
+    const a=rounds[i];
+    $("#a-num").textContent=(i+1)+"/"+rounds.length;
+    $("#a-fb").textContent=""; $("#a-fb").className="feedback";
+    const sameRole = AGENTS.filter(x=>x.n!==a.n && x.r===a.r);
+    const others = AGENTS.filter(x=>x.n!==a.n && x.r!==a.r);
+    const decoys = shuffle(sameRole).slice(0,2).concat(shuffle(others).slice(0,1));
+    const box=$("#a-opts"); box.innerHTML="";
+    shuffle([a,...decoys]).forEach((x,k)=>{
+      const b=document.createElement("button"); b.className="opt";
+      b.innerHTML='<span class="k">'+"ABCD"[k]+'</span><span></span>'; b.lastChild.textContent=x.n; b.dataset.v=x.n;
+      b.addEventListener("click",()=>pick(b)); box.appendChild(b);
+    });
+    renderClues(true);
+  }
+  $("#a-more").onclick=()=>{ if(hints<3 && !locked){ hints++; used=hints; sfx.tick(); renderClues(true); } };
+  function pick(btn){
+    if(locked) return; locked=true;
+    const a=rounds[i];
+    document.querySelectorAll("#a-opts .opt").forEach(b=>{ b.disabled=true; if(b.dataset.v===a.n) b.classList.add("right"); });
+    hints=3; renderClues(false);
+    const fb=$("#a-fb");
+    if(btn.dataset.v===a.n){
+      const pts = 1000 - (used-1)*300; score+=pts; hits++;
+      fb.textContent="+"+pts; fb.className="feedback ok pop"; sfx.ok();
+    } else { btn.classList.add("wrong"); fb.textContent="Era "+a.n; fb.className="feedback bad pop"; sfx.bad(); }
+    $("#a-score").textContent=score;
+    timer=setTimeout(()=>{ i++; if(i<rounds.length) render(); else finish("agent", score, hits+"/"+rounds.length+" agentes", rankFor("agent",score)); }, 1700);
+  }
+  $("#a-score").textContent="0";
+  render();
+  cleanup=()=>{ clearTimeout(timer); locked=true; };
+}
+
+/* ================== PUNTERÍA ================== */
+function startAim(){
+  show("aim");
+  const arena=$("#arena"), msg=$("#m-msg");
+  arena.querySelectorAll(".target,.hitfx").forEach(n=>n.remove());
+  msg.hidden=false;
+  msg.innerHTML='<div><h3>Calentá la muñeca</h3><p>30 segundos. Tocar fuera de un blanco resta puntos.</p><button class="btn" id="m-start">Empezar</button></div>';
+  ["#m-time","#m-hits","#m-acc","#m-score"].forEach((s,k)=>$(s).textContent=["30.0","0","—","0"][k]);
+  let running=false, hits=0, shots=0, score=0, end=0, raf=0, spawnT=0, live=new Set();
+  const DUR=30000;
+  function fx(x,y,text,miss){ const f=document.createElement("div"); f.className="hitfx"+(miss?" miss":""); f.textContent=text; f.style.left=(x-12)+"px"; f.style.top=(y-14)+"px"; arena.appendChild(f); setTimeout(()=>f.remove(),620); }
+  function spawn(){
+    if(!running) return;
+    const elapsed = DUR-(end-performance.now()), p=Math.min(1,elapsed/DUR);
+    const size = Math.round(78 - 40*p), life = 1500 - 700*p;
+    const W=arena.clientWidth, H=arena.clientHeight;
+    const t=document.createElement("button"); t.className="target"; t.setAttribute("aria-label","Blanco");
+    t.style.width=t.style.height=size+"px";
+    t.style.left=Math.round(Math.random()*(W-size))+"px"; t.style.top=Math.round(Math.random()*(H-size))+"px";
+    const born=performance.now();
+    t.addEventListener("pointerdown",e=>{
+      e.stopPropagation(); if(!running) return;
+      shots++; hits++;
+      const quick = Math.max(0, 1-(performance.now()-born)/life);
+      const pts = 100 + Math.round(100*quick); score+=pts;
+      const r=arena.getBoundingClientRect(); fx(e.clientX-r.left, e.clientY-r.top, "+"+pts);
+      sfx.hit(); t.remove(); live.delete(t); upd();
+    });
+    arena.appendChild(t); live.add(t);
+    setTimeout(()=>{ if(live.has(t)){ t.remove(); live.delete(t); } }, life);
+    spawnT=setTimeout(spawn, Math.max(330, 700 - 380*p));
+  }
+  function onMiss(e){
+    if(!running || e.target!==arena) return;
+    shots++; score=Math.max(0,score-50);
+    const r=arena.getBoundingClientRect(); fx(e.clientX-r.left, e.clientY-r.top, "−50", true);
+    beep(220,.05,"square",.03); upd();
+  }
+  function upd(){
+    $("#m-hits").textContent=hits; $("#m-score").textContent=score;
+    $("#m-acc").textContent= shots? Math.round(100*hits/shots)+"%" : "—";
+  }
+  function loop(){
+    const left=Math.max(0,end-performance.now());
+    $("#m-time").textContent=(left/1000).toFixed(1);
+    if(left<=0){ stop(true); return; }
+    raf=requestAnimationFrame(loop);
+  }
+  function stop(done){
+    running=false; cancelAnimationFrame(raf); clearTimeout(spawnT);
+    live.forEach(t=>t.remove()); live.clear();
+    arena.removeEventListener("pointerdown",onMiss);
+    if(done){ const acc = shots? Math.round(100*hits/shots):0; finish("aim", score, hits+" aciertos · "+acc+"% de precisión", rankFor("aim",score)); }
+  }
+  msg.querySelector("#m-start").addEventListener("click",()=>{
+    let n=3; msg.innerHTML='<div><h3 id="cd">3</h3></div>'; sfx.tick();
+    const cd=setInterval(()=>{
+      n--; if(n>0){ msg.querySelector("#cd").textContent=n; sfx.tick(); return; }
+      clearInterval(cd); msg.hidden=true; running=true; end=performance.now()+DUR;
+      arena.addEventListener("pointerdown",onMiss); spawn(); loop(); sfx.ok();
+    },650);
+    cleanup=()=>{ clearInterval(cd); stop(false); };
+  });
+  cleanup=()=>stop(false);
+}
+
+/* ================== DEFUSE (reflejos) ================== */
+function startReact(){
+  show("react");
+  const pad=$("#pad"), H=$("#pad-h"), P=$("#pad-p");
+  let state="idle", times=[], goAt=0, to=0;
+  const TRIES=5;
+  function set(cls,h,p){ pad.className="pad "+cls; H.textContent=h; P.textContent=p; }
+  function renderTries(){
+    $("#r-num").textContent=times.length+"/"+TRIES;
+    const valid=times.filter(t=>t!=null);
+    $("#r-best").textContent = valid.length? Math.min(...valid)+" ms" : "—";
+    $("#r-tries").innerHTML = times.map((t,k)=>"<span>#"+(k+1)+" · "+(t==null?"adelantado":t+" ms")+"</span>").join("");
+  }
+  set("idle","Spike plantada","Tocá para empezar. Cuando se ponga roja, defusá.");
+  renderTries();
+  function arm(){
+    state="wait"; set("wait","Esperá…","No toques todavía");
+    to=setTimeout(()=>{ state="go"; goAt=performance.now(); set("go","¡Defusá!","Tocá ya"); beep(990,.06,"square",.06); }, 1300+Math.random()*2700);
+  }
+  function handle(){
+    if(state==="idle"||state==="show"){
+      if(times.length>=TRIES) return;
+      arm(); return;
+    }
+    if(state==="wait"){
+      clearTimeout(to); times.push(null); sfx.bad(); state="show";
+      set("early","¡Te adelantaste!","Intento perdido. Tocá para el siguiente.");
+      renderTries(); maybeEnd(); return;
+    }
+    if(state==="go"){
+      const ms=Math.round(performance.now()-goAt); times.push(ms); state="show"; sfx.ok();
+      set("show", ms+" ms", times.length<TRIES ? "Tocá para el siguiente intento" : "¡Listo!");
+      renderTries(); maybeEnd();
+    }
+  }
+  function maybeEnd(){
+    if(times.length<TRIES) return;
+    const valid=times.filter(t=>t!=null);
+    const avg = valid.length? Math.round(valid.reduce((a,b)=>a+b,0)/valid.length) : 999;
+    const misses = TRIES-valid.length;
+    const score = Math.max(0, Math.round(1000 - (avg-150)*2.5) - misses*150);
+    setTimeout(()=>finish("react", score, "Promedio "+(valid.length?avg+" ms":"—")+(misses?" · "+misses+" adelantado"+(misses>1?"s":""):""), rankFor("react",score)), 1100);
+  }
+  pad.onpointerdown = e=>{ e.preventDefault(); handle(); };
+  pad.onkeydown = e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); handle(); } };
+  pad.onclick = null;
+  cleanup=()=>{ clearTimeout(to); state="idle"; };
+}
+
+/* ================== RANGOS & RESULTADO ================== */
+const RANKS=["Hierro","Bronce","Plata","Oro","Platino","Diamante","Ascendente","Inmortal","Radiante"];
+const RANK_MAX={trivia:13000, agent:8000, aim:7000, react:1000, duel:15000};
+function rankFor(game,score){
+  const r=Math.max(0,Math.min(.999, score/RANK_MAX[game]));
+  return RANKS[Math.floor(r*RANKS.length)];
+}
+function finish(game,score,detail,rank){
+  const name=nick()||"ANÓNIMO";
+  const best=store.get("gc_best",{});
+  const isBest = !(best[game]>=score);
+  if(isBest){ best[game]=score; store.set("gc_best",best); }
+  show("result");
+  $("#res-game").textContent=GAME_NAMES[game]+(isBest?" · nuevo récord personal":"");
+  $("#res-who").textContent=name;
+  $("#res-rank").textContent="Rango: "+rank;
+  $("#res-detail").textContent=detail;
+  const now=new Date();
+  $("#res-time").textContent=now.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})+" hs";
+  $("#res-code").textContent=ticketCode(game,name,score);
+  const el=$("#res-score"); let cur=0; const t0=performance.now();
+  (function count(t){ const p=Math.min(1,(t-t0)/900); cur=Math.round(score*(1-Math.pow(1-p,3))); el.innerHTML=cur+" <small>PTS</small>"; if(p<1) requestAnimationFrame(count); })(t0);
+  $("#res-best").innerHTML = Object.keys(GAME_NAMES).map(g=>"<li><span>"+GAME_NAMES[g]+"</span><b>"+(best[g]!=null?best[g]:"—")+"</b></li>").join("");
+  sfx.win(); burst();
+}
+$("#res-again").addEventListener("click",()=>start(lastGame));
+
+/* Lluvia de fragmentos al terminar */
+function burst(){
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c=$("#shards"), ctx=c.getContext("2d"), dpr=window.devicePixelRatio||1;
+  c.width=innerWidth*dpr; c.height=innerHeight*dpr; ctx.scale(dpr,dpr);
+  const cols=["#ff4655","#ede8df","#f5c24b","#3fe0c5"];
+  const ps=Array.from({length:90},()=>({x:innerWidth/2+(Math.random()-.5)*120,y:innerHeight*.35,vx:(Math.random()-.5)*14,vy:-Math.random()*13-4,r:Math.random()*Math.PI,vr:(Math.random()-.5)*.4,s:6+Math.random()*10,c:cols[Math.floor(Math.random()*cols.length)]}));
+  const t0=performance.now();
+  (function frame(t){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    ps.forEach(p=>{ p.vy+=.45; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle=p.c; ctx.beginPath(); ctx.moveTo(0,-p.s/2); ctx.lineTo(p.s/2,p.s/2); ctx.lineTo(-p.s/2,p.s/3); ctx.closePath(); ctx.fill(); ctx.restore(); });
+    if(t-t0<2200) requestAnimationFrame(frame); else ctx.clearRect(0,0,innerWidth,innerHeight);
+  })(t0);
+}
+
+/* ================== DUELO 1v1 ================== */
+const DUEL = (()=>{
+  const W=960, H=600, R=16;
+  const WALLS=[[200,120,60,140],[430,60,100,50],[455,250,50,100],[120,420,110,40],[300,330,40,40]];
+  WALLS.slice().forEach(([x,y,w,h])=>{ if(!(x===455&&y===250)) WALLS.push([W-x-w,H-y-h,w,h]); });
+  const BOTS={
+    hierro:{label:"Hierro", react:650, err:.17, speed:.82, mult:1},
+    oro:{label:"Oro", react:380, err:.095, speed:.95, mult:1.5},
+    radiante:{label:"Radiante", react:210, err:.045, speed:1.05, mult:2.2}
+  };
+  const WIN_ROUNDS=5, MAG=25, FIRE_MS=100, DMG=34, RELOAD_MS=1800, ROUND_MS=45000;
+  let cv, pad, ctx, raf=0, last=0, diff="oro", st=null, input=null, running=false, timers=[];
+  const now=()=>performance.now();
+  const later=(fn,ms)=>{ const t=setTimeout(fn,ms); timers.push(t); return t; };
+
+  function mkFighter(x,y,ang){ return {x,y,ang,hp:100,ammo:MAG,reloadUntil:0,nextShot:0,spray:0,lastShot:0,vx:0,vy:0,dashUntil:0,dashCd:0,dashVx:0,dashVy:0,flash:0}; }
+
+  /* ---------- geometría ---------- */
+  function rayRect(ox,oy,dx,dy,[x,y,w,h]){
+    let t0=0,t1=Infinity;
+    for(const [o,d,mn,mx] of [[ox,dx,x,x+w],[oy,dy,y,y+h]]){
+      if(Math.abs(d)<1e-9){ if(o<mn||o>mx) return Infinity; continue; }
+      let a=(mn-o)/d, b=(mx-o)/d; if(a>b)[a,b]=[b,a];
+      t0=Math.max(t0,a); t1=Math.min(t1,b); if(t0>t1) return Infinity;
+    }
+    return t0;
+  }
+  function rayCircle(ox,oy,dx,dy,cx,cy,r){
+    const fx=ox-cx, fy=oy-cy, b=fx*dx+fy*dy, c=fx*fx+fy*fy-r*r, disc=b*b-c;
+    if(disc<0) return Infinity; const t=-b-Math.sqrt(disc); return t>=0?t:Infinity;
+  }
+  function wallHit(ox,oy,dx,dy){
+    let t=Infinity;
+    for(const w of WALLS) t=Math.min(t,rayRect(ox,oy,dx,dy,w));
+    // bordes
+    if(dx>0) t=Math.min(t,(W-ox)/dx); if(dx<0) t=Math.min(t,-ox/dx);
+    if(dy>0) t=Math.min(t,(H-oy)/dy); if(dy<0) t=Math.min(t,-oy/dy);
+    return t;
+  }
+  function los(a,b){
+    const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy);
+    return wallHit(a.x,a.y,dx/d,dy/d) > d - R;
+  }
+  function collide(f){
+    f.x=Math.max(R,Math.min(W-R,f.x)); f.y=Math.max(R,Math.min(H-R,f.y));
+    for(const [x,y,w,h] of WALLS){
+      const cx=Math.max(x,Math.min(f.x,x+w)), cy=Math.max(y,Math.min(f.y,y+h));
+      let dx=f.x-cx, dy=f.y-cy, d=Math.hypot(dx,dy);
+      if(d<R){
+        if(d<1e-6){ dx=f.x-(x+w/2); dy=f.y-(y+h/2); d=Math.hypot(dx,dy)||1; f.x=cx+dx/d*R; f.y=cy+dy/d*R; }
+        else { f.x=cx+dx/d*R; f.y=cy+dy/d*R; }
+      }
+    }
+  }
+
+  /* ---------- disparos ---------- */
+  function tryShoot(shooter,target,t,isPlayer){
+    if(t<shooter.nextShot || t<shooter.reloadUntil) return;
+    if(shooter.ammo<=0){ startReload(shooter,t); return; }
+    if(t-shooter.lastShot>350) shooter.spray=0;
+    const moving=Math.hypot(shooter.vx,shooter.vy)>40;
+    const spread=.018 + (moving?.085:0) + Math.min(.11, shooter.spray*.014);
+    const a=shooter.ang + (Math.random()-.5)*2*spread;
+    const dx=Math.cos(a), dy=Math.sin(a);
+    const ox=shooter.x+dx*(R+2), oy=shooter.y+dy*(R+2);
+    const tw=wallHit(ox,oy,dx,dy), tc=rayCircle(ox,oy,dx,dy,target.x,target.y,R);
+    const hit=tc<tw, end=Math.min(tw,tc,1400);
+    st.tracers.push({x1:ox,y1:oy,x2:ox+dx*end,y2:oy+dy*end,t,player:isPlayer});
+    shooter.ammo--; shooter.spray++; shooter.lastShot=t; shooter.nextShot=t+FIRE_MS; shooter.flash=t;
+    if(isPlayer) beep(320+Math.random()*40,.035,"square",.025);
+    if(hit){
+      target.hp=Math.max(0,target.hp-DMG); target.flash=t;
+      st.pops.push({x:target.x,y:target.y-R-6,txt:String(DMG),t,good:isPlayer});
+      if(isPlayer) sfx.hit(); else beep(140,.06,"sawtooth",.05);
+      if(target.hp<=0) endRound(isPlayer?"p":"b");
+    } else {
+      st.sparks.push({x:ox+dx*end,y:oy+dy*end,t});
+    }
+    if(shooter.ammo<=0) startReload(shooter,t);
+  }
+  function startReload(f,t){ if(f.reloadUntil>t || f.ammo===MAG) return; f.reloadUntil=t+RELOAD_MS; f.ammo=0; f.reloading=true; }
+
+  /* ---------- ronda ---------- */
+  function resetRound(){
+    st.p=mkFighter(70,300,0); st.b=mkFighter(W-70,300,Math.PI);
+    st.tracers=[]; st.sparks=[]; st.pops=[];
+    st.phase="freeze"; st.freezeUntil=now()+2200; st.roundEnd=st.freezeUntil+ROUND_MS;
+    st.bot={seenAt:0,target:{x:W-70,y:300},stuckT:now(),lx:W-70,ly:300,wanderUntil:0,burst:0,strafeUntil:0,strafeDir:1,aimErr:0};
+    banner("Round "+(st.pScore+st.bScore+1), "Primero a "+WIN_ROUNDS+" gana");
+  }
+  function endRound(winner){
+    if(st.phase!=="live") return;
+    st.phase="post";
+    if(winner==="p") st.pScore++; else if(winner==="b") st.bScore++;
+    const clutch = winner==="p" && st.p.hp<=34;
+    if(winner==="p"){ sfx.ok(); banner(clutch?"¡Clutch!":"Round ganado", st.pScore+" – "+st.bScore); }
+    else if(winner==="b"){ sfx.bad(); banner("Round perdido", st.pScore+" – "+st.bScore); }
+    else banner("Tiempo", "Nadie suma");
+    updHud(true);
+    later(()=>{
+      if(st.pScore>=WIN_ROUNDS || st.bScore>=WIN_ROUNDS) return finishMatch();
+      resetRound();
+    },1800);
+  }
+  function finishMatch(){
+    running=false; cancelAnimationFrame(raf);
+    const won=st.pScore>st.bScore, b=BOTS[diff];
+    const score=Math.round((st.pScore*1000 + (won?2000:0)) * b.mult);
+    finish("duel", score, (won?"Victoria ":"Derrota ")+st.pScore+"–"+st.bScore+" vs bot "+b.label, rankFor("duel",score));
+  }
+  function banner(h,p){ const el=$("#d-banner"); el.hidden=false; el.querySelector("h3").textContent=h; el.querySelector("p").textContent=p; el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
+
+  /* ---------- IA del bot ---------- */
+  function botThink(t,dt){
+    const b=st.b, p=st.p, ai=st.bot, cfg=BOTS[diff];
+    const sees=los(b,p);
+    let mx=0,my=0;
+    if(sees){
+      if(!ai.seenAt){ ai.seenAt=t; ai.aimErr=(Math.random()-.5)*2*cfg.err; }
+      ai.target={x:p.x,y:p.y};
+      const want=Math.atan2(p.y-b.y,p.x-b.x)+ai.aimErr;
+      b.ang=turn(b.ang,want,dt*(6+cfg.speed*6));
+      if(t-ai.seenAt>cfg.react){
+        if(t<ai.strafeUntil){ mx=Math.cos(b.ang+Math.PI/2)*ai.strafeDir; my=Math.sin(b.ang+Math.PI/2)*ai.strafeDir; }
+        else {
+          tryShoot(b,p,t,false);
+          if(b.lastShot===t){ ai.burst++; if(Math.random()<.35) ai.aimErr=(Math.random()-.5)*2*cfg.err; }
+          if(ai.burst>=4+Math.floor(Math.random()*4)){ ai.burst=0; ai.strafeUntil=t+220+Math.random()*260; ai.strafeDir=Math.random()<.5?-1:1; }
+        }
+      } else { mx=Math.cos(b.ang+Math.PI/2)*.6; my=Math.sin(b.ang+Math.PI/2)*.6; }
+    } else {
+      ai.seenAt=0; ai.burst=0;
+      if(t-ai.stuckT>500){
+        if(Math.hypot(b.x-ai.lx,b.y-ai.ly)<6) { ai.wanderUntil=t+900; ai.wander={x:R+Math.random()*(W-2*R),y:R+Math.random()*(H-2*R)}; }
+        ai.lx=b.x; ai.ly=b.y; ai.stuckT=t;
+      }
+      const goal = t<ai.wanderUntil ? ai.wander : (Math.random()<.002 ? (ai.target={x:p.x,y:p.y}) : ai.target);
+      const dx=goal.x-b.x, dy=goal.y-b.y, d=Math.hypot(dx,dy);
+      if(d<20){ ai.target={x:p.x+(Math.random()-.5)*200,y:p.y+(Math.random()-.5)*200}; }
+      else { mx=dx/d; my=dy/d; b.ang=turn(b.ang,Math.atan2(dy,dx),dt*8); }
+      if(b.ammo<MAG*.4 && t>b.reloadUntil) startReload(b,t);
+    }
+    move(b,mx,my,190*cfg.speed,dt);
+  }
+  function turn(a,target,max){ let d=((target-a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI; return a+Math.max(-max,Math.min(max,d)); }
+  function move(f,mx,my,speed,dt){
+    const t=now();
+    if(t<f.dashUntil){ f.vx=f.dashVx; f.vy=f.dashVy; }
+    else { const m=Math.hypot(mx,my); if(m>1){mx/=m;my/=m;} f.vx=mx*speed; f.vy=my*speed; }
+    f.x+=f.vx*dt; f.y+=f.vy*dt; collide(f);
+  }
+
+  /* ---------- input ---------- */
+  function setupInput(){
+    input={keys:new Set(), mouse:null, firing:false, move:null, aim:null};
+    const toWorld=(cx,cy)=>{ const r=cv.getBoundingClientRect(); return {x:(cx-r.left)/r.width*W, y:(cy-r.top)/r.height*H}; };
+    input.kd=e=>{ const k=e.key.toLowerCase(); if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"," ","shift","r"].includes(k)) e.preventDefault(); input.keys.add(k); if(k==="shift"||k===" ") dash(); if(k==="r") startReload(st.p,now()); };
+    input.ku=e=>input.keys.delete(e.key.toLowerCase());
+    input.pd=e=>{
+      if(e.target.closest("button")) return; e.preventDefault(); try{ pad.setPointerCapture(e.pointerId); }catch(err){}
+      if(e.pointerType==="mouse"){ input.mouse=toWorld(e.clientX,e.clientY); input.firing=true; return; }
+      const r=pad.getBoundingClientRect(); const side = (e.clientX-r.left) < r.width/2 ? "move" : "aim";
+      if(input[side]) return;
+      input[side]={id:e.pointerId, ox:e.clientX, oy:e.clientY, x:e.clientX, y:e.clientY};
+    };
+    input.pm=e=>{
+      if(e.pointerType==="mouse"){ input.mouse=toWorld(e.clientX,e.clientY); return; }
+      for(const s of ["move","aim"]) if(input[s]&&input[s].id===e.pointerId){ input[s].x=e.clientX; input[s].y=e.clientY; }
+    };
+    input.pu=e=>{
+      if(e.pointerType==="mouse"){ input.firing=false; return; }
+      for(const s of ["move","aim"]) if(input[s]&&input[s].id===e.pointerId) input[s]=null;
+    };
+    document.addEventListener("keydown",input.kd); document.addEventListener("keyup",input.ku);
+    pad=$("#d-play");
+    pad.addEventListener("pointerdown",input.pd); pad.addEventListener("pointermove",input.pm);
+    pad.addEventListener("pointerup",input.pu); pad.addEventListener("pointercancel",input.pu);
+    pad.oncontextmenu=e=>e.preventDefault();
+  }
+  function teardownInput(){
+    if(!input) return;
+    document.removeEventListener("keydown",input.kd); document.removeEventListener("keyup",input.ku);
+    pad.removeEventListener("pointerdown",input.pd); pad.removeEventListener("pointermove",input.pm);
+    pad.removeEventListener("pointerup",input.pu); pad.removeEventListener("pointercancel",input.pu);
+    input=null;
+  }
+  function dash(){
+    const p=st&&st.p, t=now(); if(!p||st.phase!=="live"||t<p.dashCd) return;
+    let mx=0,my=0; const k=input.keys;
+    if(k.has("w")||k.has("arrowup"))my--; if(k.has("s")||k.has("arrowdown"))my++;
+    if(k.has("a")||k.has("arrowleft"))mx--; if(k.has("d")||k.has("arrowright"))mx++;
+    if(input.move){ mx=input.move.x-input.move.ox; my=input.move.y-input.move.oy; }
+    let m=Math.hypot(mx,my); if(m<1){ mx=Math.cos(p.ang); my=Math.sin(p.ang); m=1; }
+    p.dashVx=mx/m*900; p.dashVy=my/m*900; p.dashUntil=t+150; p.dashCd=t+5000;
+    beep(700,.12,"sine",.05);
+  }
+  function playerThink(t,dt){
+    const p=st.p; let mx=0,my=0; const k=input.keys;
+    if(k.has("w")||k.has("arrowup"))my--; if(k.has("s")||k.has("arrowdown"))my++;
+    if(k.has("a")||k.has("arrowleft"))mx--; if(k.has("d")||k.has("arrowright"))mx++;
+    const scale = cv.getBoundingClientRect().width / W;
+    if(input.move){ const dx=input.move.x-input.move.ox, dy=input.move.y-input.move.oy, d=Math.hypot(dx,dy), max=48; if(d>6){ mx=dx/Math.max(d,max); my=dy/Math.max(d,max); if(d>max){mx=dx/d;my=dy/d;} } }
+    move(p,mx,my,200,dt);
+    let fire=false;
+    if(input.aim){ const dx=input.aim.x-input.aim.ox, dy=input.aim.y-input.aim.oy; if(Math.hypot(dx,dy)>14){ p.ang=Math.atan2(dy,dx); fire=true; } }
+    else if(input.mouse){ p.ang=Math.atan2(input.mouse.y-p.y,input.mouse.x-p.x); fire=input.firing; }
+    if(fire) tryShoot(p,st.b,t,true);
+    if(p.reloading && t>=p.reloadUntil){ p.ammo=MAG; p.reloading=false; }
+    if(st.b.reloading && t>=st.b.reloadUntil){ st.b.ammo=MAG; st.b.reloading=false; }
+  }
+
+  /* ---------- dibujo ---------- */
+  function resize(){
+    const dpr=Math.min(2,window.devicePixelRatio||1), r=cv.getBoundingClientRect();
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    ctx.setTransform(cv.width/W,0,0,cv.height/H,0,0);
+  }
+  function drawFighter(f,col,t){
+    ctx.save(); ctx.translate(f.x,f.y);
+    ctx.fillStyle="rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(3,4,R,0,Math.PI*2); ctx.fill();
+    ctx.rotate(f.ang);
+    ctx.fillStyle="#dfe4ea"; ctx.fillRect(R-4,-3,16,6);
+    if(t-f.flash<50 && f.lastShot===f.flash){ ctx.fillStyle="#ffd36b"; ctx.beginPath(); ctx.moveTo(R+12,-6); ctx.lineTo(R+24,0); ctx.lineTo(R+12,6); ctx.fill(); }
+    ctx.fillStyle = (t-f.flash<90 && f.lastShot!==f.flash) ? "#ffffff" : col;
+    ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="rgba(13,16,21,.85)"; ctx.beginPath(); ctx.moveTo(R-3,0); ctx.lineTo(2,-7); ctx.lineTo(2,7); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle="rgba(0,0,0,.5)"; ctx.fillRect(f.x-20,f.y-R-12,40,5);
+    ctx.fillStyle=col; ctx.fillRect(f.x-20,f.y-R-12,40*f.hp/100,5);
+  }
+  function draw(t){
+    ctx.fillStyle="#12161c"; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle="rgba(255,255,255,.035)"; ctx.lineWidth=1; ctx.beginPath();
+    for(let x=0;x<=W;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,H);} for(let y=0;y<=H;y+=40){ctx.moveTo(0,y);ctx.lineTo(W,y);} ctx.stroke();
+    // sitios A / B
+    ctx.font="900 64px 'Big Shoulders Display', Impact, sans-serif"; ctx.fillStyle="rgba(255,255,255,.04)"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("A",W/2,150); ctx.fillText("B",W/2,450);
+    // spawns
+    ctx.fillStyle="rgba(63,224,197,.06)"; ctx.fillRect(0,220,110,160);
+    ctx.fillStyle="rgba(255,70,85,.06)"; ctx.fillRect(W-110,220,110,160);
+    for(const [x,y,w,h] of WALLS){
+      ctx.fillStyle="#232b35"; ctx.fillRect(x,y,w,h);
+      ctx.fillStyle="#2e3844"; ctx.fillRect(x,y,w,4);
+      ctx.strokeStyle="rgba(255,70,85,.35)"; ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    }
+    st.tracers=st.tracers.filter(tr=>t-tr.t<110);
+    for(const tr of st.tracers){ ctx.strokeStyle=tr.player?`rgba(63,224,197,${1-(t-tr.t)/110})`:`rgba(255,120,130,${1-(t-tr.t)/110})`; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(tr.x1,tr.y1); ctx.lineTo(tr.x2,tr.y2); ctx.stroke(); }
+    st.sparks=st.sparks.filter(s=>t-s.t<200);
+    for(const s of st.sparks){ ctx.fillStyle=`rgba(255,211,107,${1-(t-s.t)/200})`; ctx.beginPath(); ctx.arc(s.x,s.y,3+(t-s.t)/40,0,Math.PI*2); ctx.fill(); }
+    drawFighter(st.p,"#3fe0c5",t); drawFighter(st.b,"#ff4655",t);
+    st.pops=st.pops.filter(p=>t-p.t<700);
+    ctx.font="900 22px 'Big Shoulders Display', Impact, sans-serif";
+    for(const p of st.pops){ ctx.fillStyle=p.good?`rgba(245,194,75,${1-(t-p.t)/700})`:`rgba(255,70,85,${1-(t-p.t)/700})`; ctx.fillText(p.txt,p.x,p.y-(t-p.t)/25); }
+    // sticks táctiles
+    const r=cv.getBoundingClientRect(), sx=W/r.width, sy=H/r.height;
+    for(const [s,col] of [["move","rgba(255,255,255,.5)"],["aim","rgba(255,70,85,.8)"]]){
+      const k=input&&input[s]; if(!k) continue;
+      const ox=(k.ox-r.left)*sx, oy=(k.oy-r.top)*sy; let dx=(k.x-k.ox)*sx, dy=(k.y-k.oy)*sy; const d=Math.hypot(dx,dy), max=48*sx; if(d>max){dx=dx/d*max;dy=dy/d*max;}
+      ctx.strokeStyle=col; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(ox,oy,max,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle=col; ctx.beginPath(); ctx.arc(ox+dx,oy+dy,20*sx,0,Math.PI*2); ctx.fill();
+    }
+    if(st.phase==="freeze"){ const s=Math.ceil((st.freezeUntil-t)/1000); ctx.fillStyle="rgba(13,16,21,.45)"; ctx.fillRect(0,0,W,H); ctx.fillStyle="#ede8df"; ctx.font="900 120px 'Big Shoulders Display', Impact, sans-serif"; ctx.fillText(String(Math.max(1,s)),W/2,H/2); }
+  }
+  let hudCache="";
+  function updHud(force){
+    const p=st.p, b=st.b, t=now();
+    const left=st.phase==="live"?Math.max(0,Math.ceil((st.roundEnd-t)/1000)):45;
+    const ammo = p.reloading ? "···" : String(p.ammo);
+    const dashReady = t>=p.dashCd;
+    const key=[p.hp,b.hp,st.pScore,st.bScore,left,ammo,dashReady].join("|");
+    if(!force && key===hudCache) return; hudCache=key;
+    $("#d-php").textContent=p.hp; $("#d-bhp").textContent=b.hp;
+    $("#d-score").textContent=st.pScore+" – "+st.bScore;
+    $("#d-time").textContent=left; $("#d-ammo").textContent=ammo;
+    const db=$("#d-dash"); db.disabled=!dashReady; db.textContent= dashReady ? "Dash" : "Dash "+Math.ceil((p.dashCd-t)/1000)+"s";
+  }
+  function loop(t){
+    if(!running) return;
+    const dt=Math.min(.033,(t-last)/1000); last=t;
+    if(st.phase==="freeze" && t>=st.freezeUntil){ st.phase="live"; $("#d-banner").hidden=true; beep(990,.1,"square",.05); }
+    if(st.phase==="live"){
+      playerThink(t,dt); if(st.phase==="live") botThink(t,dt);
+      if(st.phase==="live" && t>st.roundEnd){
+        endRound(st.p.hp>st.b.hp?"p":st.b.hp>st.p.hp?"b":null);
+      }
+    }
+    draw(t); updHud(false);
+    raf=requestAnimationFrame(loop);
+  }
+
+  function open(){
+    show("duel");
+    cv=$("#duel-cv"); ctx=cv.getContext("2d");
+    $("#d-setup").hidden=false; $("#d-play").hidden=true;
+    document.querySelectorAll("[data-diff]").forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.diff===diff)));
+    cleanup=stop;
+  }
+  function begin(){
+    $("#d-setup").hidden=true; $("#d-play").hidden=false;
+    st={pScore:0,bScore:0};
+    resize(); setupInput(); resetRound(); updHud(true);
+    running=true; last=now(); raf=requestAnimationFrame(loop);
+    try{ navigator.wakeLock?.request("screen").catch(()=>{}); }catch(e){}
+    window.addEventListener("resize",resize);
+    $("#duel-cv").scrollIntoView({block:"center",behavior:"smooth"});
+  }
+  function stop(){
+    running=false; cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers=[];
+    teardownInput(); window.removeEventListener("resize",resize);
+  }
+  document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>{
+    diff=b.dataset.diff; document.querySelectorAll("[data-diff]").forEach(x=>x.setAttribute("aria-pressed", String(x===b))); sfx.tick();
+  }));
+  $("#d-start").addEventListener("click",begin);
+  $("#d-dash").addEventListener("pointerdown",e=>{ e.preventDefault(); dash(); });
+  $("#d-reload").addEventListener("pointerdown",e=>{ e.preventDefault(); if(st) startReload(st.p,now()); });
+  return {open};
+})();
+function startDuel(){ DUEL.open(); }
+
+/* ================== PRESENTADOR ================== */
+let hostOrder=null, hostI=0, hostRevealed=false, hostKeys=null;
+function startHost(){
+  show("host");
+  if(!hostOrder) hostOrder=shuffle(QUESTIONS).map(q=>({...q, opts:shuffle(q.a)}));
+  renderHost();
+  hostKeys=e=>{
+    if(e.target.closest("input,select,textarea")) return;
+    if(e.key==="ArrowRight"){ e.preventDefault(); moveHost(1); }
+    else if(e.key==="ArrowLeft"){ e.preventDefault(); moveHost(-1); }
+    else if(e.key===" "){ e.preventDefault(); revealHost(); }
+  };
+  document.addEventListener("keydown",hostKeys);
+  cleanup=()=>document.removeEventListener("keydown",hostKeys);
+}
+function renderHost(){
+  const q=hostOrder[hostI]; hostRevealed=false;
+  $("#h-num").textContent=(hostI+1)+"/"+hostOrder.length;
+  $("#h-cat").textContent=q.c;
+  const qt=$("#h-q"); qt.textContent=q.q; qt.classList.remove("pop"); void qt.offsetWidth; qt.classList.add("pop");
+  $("#h-opts").innerHTML="";
+  q.opts.forEach((o,k)=>{ const d=document.createElement("div"); d.innerHTML='<span class="k">'+"ABCD"[k]+'</span><span></span>'; d.lastChild.textContent=o; d.dataset.v=o; $("#h-opts").appendChild(d); });
+  $("#h-reveal").textContent="Mostrar respuesta";
+}
+function revealHost(){
+  const q=hostOrder[hostI];
+  if(hostRevealed){ moveHost(1); return; }
+  hostRevealed=true;
+  document.querySelectorAll("#h-opts div").forEach(d=>d.classList.add(d.dataset.v===q.a[0]?"right":"dim"));
+  $("#h-reveal").textContent="Siguiente pregunta"; sfx.ok();
+}
+function moveHost(d){ hostI=(hostI+d+hostOrder.length)%hostOrder.length; renderHost(); }
+$("#h-prev").addEventListener("click",()=>moveHost(-1));
+$("#h-next").addEventListener("click",()=>moveHost(1));
+$("#h-reveal").addEventListener("click",revealHost);
+$("#verify-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const g=$("#v-game").value, n=$("#v-name").value, s=$("#v-score").value.replace(/\D/g,""), c=$("#v-code").value.trim().toUpperCase();
+  const ok = s!=="" && ticketCode(g,n,s)===c;
+  const out=$("#v-out"); out.className="verify-out "+(ok?"ok":"bad")+" pop";
+  out.textContent = ok ? "✓ Ticket válido · "+n.toUpperCase()+" · "+s+" pts" : "✗ No coincide. Revisá apodo, puntaje y código.";
+  ok ? sfx.ok() : sfx.bad();
+});
+
+renderSound();
+</script>
+
+</body>
+</html>
