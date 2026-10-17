@@ -13,7 +13,8 @@
 <meta property="og:description" content="Duelo 1v1 online estilo Valorant. Elegí agente, comprá tu arma y ganá 7 rondas.">
 <meta property="og:image" content="logo-rojo.png">
 <link rel="icon" href="logo-rojo.png">
-<link rel="apple-touch-icon" href="logo-rojo.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -36,8 +37,9 @@
         <p class="eyebrow"><span class="tick"></span>Gaming City · Evento Valorant</p>
         <h1 class="title"><span class="t1">Duelo</span><span class="t2">1<i>v</i>1</span></h1>
         <p class="lede">Elegí agente, comprá tu arma y enfrentá a otro jugador que esté conectado ahora. Gana el primero en llegar a <b>7 rondas</b>.</p>
+        <div class="live" id="live" hidden><span class="pulse"></span><b id="live-on">0</b> conectados · <b id="live-search">0</b> buscando rival · <b id="live-play">0</b> jugando</div>
         <div class="cta">
-          <button class="btn primary big" id="play-online"><span>Jugar online</span><small>Te emparejamos con alguien conectado</small></button>
+          <button class="btn primary big" id="play-online"><span>Jugar online</span><small>Buscamos rival al instante</small></button>
           <button class="btn ghost big" id="play-bot"><span>Práctica</span><small>Contra un bot</small></button>
         </div>
       </div>
@@ -63,7 +65,7 @@
         <span class="meta" id="board-meta">Cargando…</span>
       </div>
       <ol class="podium" id="board-list"></ol>
-      <p class="fine">Online: victoria 100 pts + 10 por ronda ganada. Contra el bot cuenta solo tu mejor partida.</p>
+      <p class="fine">Todos los modos suman al mismo ranking: victoria 100 pts + 10 por ronda ganada; derrota, 10 por ronda ganada. Contra el bot: Radiante ×1, Oro ×0,5, Hierro ×0,25.</p>
     </section>
 
     <section class="how">
@@ -98,16 +100,27 @@
       <div class="row">
         <button class="btn primary" id="s-find">Buscar rival</button>
         <button class="btn ghost" id="s-cancel" hidden>Cancelar</button>
-        <button class="link" id="s-bot">Mientras tanto, practicar contra el bot</button>
+        <button class="btn ghost" id="s-bot" hidden>Practicar mientras busco</button>
       </div>
+      <p class="fine" id="s-bot-note" hidden>Si aparece un rival mientras practicás, la práctica se corta y arranca el duelo online.</p>
+    </div>
+
+    <div class="panel friend" id="sel-friend">
+      <div><p class="label">Jugar con un amigo</p><p class="fine">Creá una sala y pasale el código, o entrá con el código que te pasaron.</p></div>
+      <div class="friend-row">
+        <button class="btn ghost" id="f-create">Crear sala</button>
+        <div class="code-box" id="f-code-box" hidden><span class="label">Tu código</span><b id="f-code">····</b><span class="fine" id="f-status">Esperando a tu amigo…</span></div>
+        <form class="join" id="f-join" autocomplete="off"><input id="f-input" maxlength="4" placeholder="ABCD" autocapitalize="characters" spellcheck="false" aria-label="Código de sala"><button class="btn primary sm" type="submit">Entrar</button></form>
+      </div>
+      <div class="gate-msg" id="f-msg" aria-live="polite"></div>
     </div>
 
     <div class="panel" id="sel-bot" hidden>
       <p class="label">Rango del bot</p>
       <div class="diffs" id="diffs">
-        <button class="diff" data-diff="hierro"><b>Hierro</b><span>Lento y errático</span></button>
-        <button class="diff" data-diff="oro"><b>Oro</b><span>Un rival parejo</span></button>
-        <button class="diff" data-diff="radiante"><b>Radiante</b><span>Reacción de pro</span></button>
+        <button class="diff" data-diff="hierro"><b>Hierro</b><span>Lento y errático · puntos ×0,25</span></button>
+        <button class="diff" data-diff="oro"><b>Oro</b><span>Un rival parejo · puntos ×0,5</span></button>
+        <button class="diff" data-diff="radiante"><b>Radiante</b><span>Reacción de pro · puntos ×1</span></button>
       </div>
       <div class="row"><button class="btn primary" id="b-start">Empezar práctica</button></div>
     </div>
@@ -115,11 +128,12 @@
     <details class="controls">
       <summary>Controles</summary>
       <div class="controls-grid">
-        <div><b>Celular</b><p>Pulgar izquierdo: moverte (poco recorrido = caminar en silencio). Pulgar derecho: apuntar y disparar. Botones para habilidad, recargar y comprar.</p></div>
+        <div><b>Celular</b><p>Pulgar izquierdo: moverte (poco recorrido = caminar en silencio). Pulgar derecho: arrastrá para apuntar y disparar, o tocá para un tiro rápido. La mira te ayuda a apuntar al rival.</p></div>
         <div><b>Compu</b><p>WASD moverte · Shift caminar · Mouse apuntar · Click disparar · E habilidad · R recargar · B comprar.</p></div>
         <div><b>Como en Valorant</b><p>Si disparás corriendo, las balas se abren. Frená para tirar preciso. Correr hace ruido: el rival ve tus pasos.</p></div>
       </div>
     </details>
+    <p class="tip" id="ios-tip" hidden>En iPhone: tocá <b>Compartir → Agregar a inicio</b> y abrí el juego desde ahí para jugar en pantalla completa.</p>
   </main>
 
   <!-- ================= MI REGISTRO ================= -->
@@ -183,7 +197,9 @@
       <p class="end-vs" id="end-vs"></p>
       <dl class="end-stats" id="end-stats"></dl>
       <div class="end-pts" id="end-pts">Guardando en el ranking…</div>
+      <div class="end-rematch" id="end-rematch" hidden></div>
       <div class="row center">
+        <button class="btn primary" id="end-rematch-btn" hidden>Revancha</button>
         <button class="btn primary" id="end-again">Jugar otra vez</button>
         <button class="btn ghost" id="end-home">Inicio</button>
       </div>

@@ -40,6 +40,41 @@ export default async function handler(req, res) {
       return send(res, 200, { ok: true, msgs: (Array.isArray(got) ? got : got ? [got] : []).map((m) => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean) });
     }
 
+    // Salas privadas: "desafiar a un amigo" con un código, y revancha
+    const ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const cleanCode = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 48);
+    if (b.action === "code_create") {
+      if (!peer) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      let code = cleanCode(b.code);
+      const entry = JSON.stringify({ pid, peer, nick });
+      if (code) { await pipeline([["SET", "gc:code:" + code, entry, "EX", "600"]]); }
+      else {
+        for (let i = 0; i < 8; i++) {
+          code = Array.from({ length: 4 }, () => ABC[Math.floor(Math.random() * ABC.length)]).join("");
+          const [ok] = await pipeline([["SET", "gc:code:" + code, entry, "NX", "EX", "600"]]);
+          if (ok === "OK") break;
+          code = "";
+        }
+        if (!code) return send(res, 503, { ok: false, error: "No se pudo crear la sala" });
+      }
+      await pipeline([["SET", "gc:mq:alive:" + pid, peer, "EX", "8"]]);
+      return send(res, 200, { ok: true, code });
+    }
+    if (b.action === "code_join") {
+      const code = cleanCode(b.code);
+      if (!code || !peer) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      const [raw] = await pipeline([["GET", "gc:code:" + code]]);
+      if (!raw) return send(res, 404, { ok: false, error: "No existe esa sala o ya se usó", code: "no_room" });
+      const e = JSON.parse(raw);
+      if (e.pid === pid) return send(res, 400, { ok: false, error: "Esa es tu propia sala" });
+      const [alive] = await pipeline([["GET", "gc:mq:alive:" + e.pid]]);
+      if (alive !== e.peer) return send(res, 404, { ok: false, error: "Tu amigo ya no está esperando", code: "no_room" });
+      const [ok] = await pipeline([["SET", "gc:mq:mm:" + e.peer, JSON.stringify({ role: "host", opp: { pid, peer, nick } }), "NX", "EX", "30"]]);
+      if (ok !== "OK") return send(res, 409, { ok: false, error: "La sala ya tiene rival" });
+      await pipeline([["DEL", "gc:code:" + code]]);
+      return send(res, 200, { ok: true, status: "matched", role: "guest", opp: { pid: e.pid, peer: e.peer, nick: e.nick } });
+    }
+
     if (b.action === "leave") {
       await pipeline([["DEL", "gc:mq:alive:" + pid], ["ZREM", "gc:mq:online", pid]]);
       return send(res, 200, { ok: true });
@@ -56,6 +91,10 @@ export default async function handler(req, res) {
     if (mm) {
       await pipeline([["DEL", "gc:mq:mm:" + peer], ["DEL", "gc:mq:alive:" + pid], ["ZREM", "gc:mq:online", pid]]);
       return send(res, 200, { ok: true, status: "matched", ...JSON.parse(mm) });
+    }
+    if (b.private) { // sala privada: solo espera a que alguien entre con el código
+      await pipeline([["ZREM", "gc:mq:online", pid]]);
+      return send(res, 200, { ok: true, status: "waiting", searching: 0 });
     }
     // Buscar a alguien esperando
     for (let i = 0; i < 6; i++) {

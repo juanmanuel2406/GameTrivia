@@ -1,9 +1,10 @@
 import { pipeline, toObj, send, fail, RANK, num } from "./_db.js";
 
 // Resultado de un Duelo 1v1. Los puntos se calculan acá, no en el celular.
-// Online: victoria 100 (50 si el rival abandona) + 10 por ronda ganada. Derrota: 10 por ronda ganada.
-// Bot: solo cuenta la mejor partida contra el bot (Hierro 20, Oro 40, Radiante 70 al ganar, + 2 por ronda).
-const BOT = { hierro: 20, oro: 40, radiante: 70 };
+// Una sola fórmula para todos los modos, y todo suma al mismo total:
+//   victoria 100 (50 si el rival abandona) + 10 por ronda ganada · derrota: 10 por ronda ganada.
+// Contra el bot se multiplica según el rango: Radiante ×1, Oro ×0,5, Hierro ×0,25 (para que no convenga farmear al bot fácil).
+const BOT = { hierro: 0.25, oro: 0.5, radiante: 1 };
 const WIN = 7;
 const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0)));
 const txt = (v, n) => String(v || "").replace(/[<>]/g, "").trim().slice(0, n);
@@ -22,16 +23,17 @@ export default async function handler(req, res) {
     if (won && !forfeit && rw < WIN) return send(res, 400, { ok: false, error: "Resultado inválido" });
     if (!won && rw >= WIN) return send(res, 400, { ok: false, error: "Resultado inválido" });
 
-    const pts = mode === "online" ? (won ? (forfeit ? 50 : 100) : 0) + 10 * rw : (won ? BOT[diff] : 0) + 2 * rw;
+    const base = (won ? (forfeit ? 50 : 100) : 0) + 10 * rw;
+    const pts = Math.round(base * (mode === "online" ? 1 : BOT[diff]));
     const key = "gc:p:" + pid;
     const [raw] = await pipeline([["HGETALL", key]]);
     const p = toObj(raw);
     const ptsOnline = num(p.pts_online) + (mode === "online" ? pts : 0);
-    const bestBot = Math.max(num(p.best_bot), mode === "bot" ? pts : 0);
-    const total = ptsOnline + bestBot;
+    const ptsBot = num(p.pts_bot) + (mode === "bot" ? pts : 0);
+    const total = num(p.total) + pts;
     const now = Date.now();
     const entry = JSON.stringify({ mode, won, forfeit, rw, rl, kills, pts, diff: mode === "bot" ? diff : "", opp: txt(b.opp, 14).toUpperCase(), agent: txt(b.agent, 12), t: now });
-    const fields = ["nick", p.nick || nick, "last", String(now), "total", String(total), "pts_online", String(ptsOnline), "best_bot", String(bestBot)];
+    const fields = ["nick", p.nick || nick, "last", String(now), "total", String(total), "pts_online", String(ptsOnline), "pts_bot", String(ptsBot)];
     if (!p.created) fields.push("created", String(now));
     const r = await pipeline([
       ["HSET", key, ...fields],

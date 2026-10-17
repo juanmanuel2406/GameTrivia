@@ -40,7 +40,7 @@ export function fail(res, e) {
 export const num = (v) => Number(v || 0);
 export function stats(p) {
   return {
-    total: num(p.total), ptsOnline: num(p.pts_online), bestBot: num(p.best_bot),
+    total: num(p.total), ptsOnline: num(p.pts_online), ptsBot: num(p.pts_bot) + num(p.best_bot),
     wins: num(p.wins), losses: num(p.losses), roundsWon: num(p.rounds_won), roundsLost: num(p.rounds_lost),
     kills: num(p.kills), matches: num(p.matches), onlineMatches: num(p.online_matches),
   };

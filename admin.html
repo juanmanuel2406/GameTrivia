@@ -117,10 +117,10 @@ td:first-child{font-family:var(--display);font-weight:900;font-size:20px}
 
     <div class="grid2">
       <div class="box">
-        <h2><span>Todos los jugadores · online: victoria 100 + 10 por ronda · bot: solo la mejor partida</span><input id="filter" placeholder="Buscar apodo" style="font-size:14px;padding:6px 10px;width:180px"></h2>
+        <h2><span>Todos los jugadores · victoria 100 + 10 por ronda · bot ×1 Radiante, ×0,5 Oro, ×0,25 Hierro</span><input id="filter" placeholder="Buscar apodo" style="font-size:14px;padding:6px 10px;width:180px"></h2>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>#</th><th>Apodo</th><th>Puntos</th><th>Victorias</th><th>Derrotas</th><th>Rondas</th><th>Elim.</th><th>Mejor bot</th><th>Partidas</th><th>Última</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Apodo</th><th>Puntos</th><th>Victorias</th><th>Derrotas</th><th>Rondas</th><th>Elim.</th><th>Pts bot</th><th>Partidas</th><th>Última</th><th></th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
@@ -185,7 +185,7 @@ function render(){
   ps.forEach((p,i)=>{
     if(q && !p.nick.includes(q)) return;
     const tr=document.createElement("tr"); if(i<3) tr.className="top"+(i+1);
-    const cells=[String(i+1), null, fmt(p.total), String(p.wins), String(p.losses), p.roundsWon+"–"+p.roundsLost, String(p.kills), p.bestBot?fmt(p.bestBot):null, String(p.matches), time(p.last), null];
+    const cells=[String(i+1), null, fmt(p.total), String(p.wins), String(p.losses), p.roundsWon+"–"+p.roundsLost, String(p.kills), p.ptsBot?fmt(p.ptsBot):null, String(p.matches), time(p.last), null];
     cells.forEach((c,k)=>{
       const td=document.createElement("td");
       if(k===1){ td.className="nick"; td.textContent=p.nick; const s=document.createElement("small"); s.textContent="#"+p.tag; td.appendChild(s); if(p.ig){ const a=document.createElement("a"); a.className="ig"; a.href="https://www.instagram.com/"+encodeURIComponent(p.ig)+"/"; a.target="_blank"; a.rel="noopener"; a.textContent="@"+p.ig; td.appendChild(a); } }
@@ -242,9 +242,9 @@ $("#reset").onclick=async()=>{
 };
 $("#csv").onclick=()=>{
   if(!data) return;
-  const head=["Puesto","Apodo","Instagram","ID","Puntos","Puntos online","Mejor vs bot","Victorias","Derrotas","Rondas ganadas","Rondas perdidas","Eliminaciones","Partidas","Primera vez","Última vez"];
+  const head=["Puesto","Apodo","Instagram","ID","Puntos","Puntos online","Puntos vs bot","Victorias","Derrotas","Rondas ganadas","Rondas perdidas","Eliminaciones","Partidas","Primera vez","Última vez"];
   const esc=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.ig?"@"+p.ig:"",p.tag,p.total,p.ptsOnline,p.bestBot,p.wins,p.losses,p.roundsWon,p.roundsLost,p.kills,p.matches,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
+  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.ig?"@"+p.ig:"",p.tag,p.total,p.ptsOnline,p.ptsBot,p.wins,p.losses,p.roundsWon,p.roundsLost,p.kills,p.matches,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
   const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="ranking-gaming-city.csv"; document.body.appendChild(a); a.click(); a.remove();
 };
