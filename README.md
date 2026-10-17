@@ -8,7 +8,10 @@ La primera vez que alguien entra ve un cartel que le pide seguir a **@gamingcity
 Cada jugador tiene **Mi registro** con su total, su puesto, su mejor marca en cada juego y sus últimas partidas.
 
 ## Duelo 1v1 online
-Empareja a dos personas que estén buscando rival al mismo tiempo. La partida va directo entre los dos celulares (WebRTC con PeerJS). El emparejamiento usa la misma base Upstash. Si una red bloquea la conexión entre dispositivos, el juego avisa y se puede jugar contra el bot.
+Empareja a dos personas que estén buscando rival al mismo tiempo, desde cualquier red (wifi o datos):
+1. **Conexión directa** entre los dos celulares (WebRTC). La señalización pasa por `/api/match` y Upstash, sin servicios externos.
+2. **TURN** (`/api/ice`) para redes que bloquean la conexión directa. Viene con Open Relay gratis. Opcional para más capacidad: `CF_TURN_KEY_ID` + `CF_TURN_KEY_API_TOKEN` (Cloudflare) o `METERED_APP` + `METERED_API_KEY`.
+3. **Plan B por el servidor**: si no hay conexión directa en ~11 s, o si se corta en medio de la partida, el juego sigue retransmitido por `/api/match`.
 
 ## Juegos
 - **Duelo 1v1**: shooter 2D contra un bot (Hierro, Oro o Radiante). Gana el primero en llegar a 5 rounds.

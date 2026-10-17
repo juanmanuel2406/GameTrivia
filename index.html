@@ -496,7 +496,7 @@ h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s
       <div class="online-box" id="d-online">
         <div class="radar" id="d-radar" hidden></div>
         <div class="online-status" id="d-ostatus">Te emparejamos con otro jugador conectado</div>
-        <p class="muted" id="d-osub" style="margin:0">Funciona mejor si los dos están en el wifi del evento.</p>
+        <p class="muted" id="d-osub" style="margin:0">Funciona con wifi o datos, desde cualquier lugar.</p>
         <div class="actions"><button class="btn" id="d-find">Buscar rival</button><button class="btn ghost" id="d-cancel" hidden>Cancelar</button></div>
       </div>
       <div class="diffs" id="d-diffs" hidden>
@@ -1235,7 +1235,7 @@ const DUEL = (()=>{
   let cv, pad, ctx, raf=0, last=0, diff="oro", st=null, input=null, running=false, timers=[];
   let mode="online", net=null, search=null;
   const ONLINE_MULT=2.2;
-  const send=(m)=>{ try{ if(net&&net.conn&&net.conn.open) net.conn.send(m); }catch(e){} };
+  const send=(m)=>{ if(net) net.out(m); };
   const now=()=>performance.now();
   const later=(fn,ms)=>{ const t=setTimeout(fn,ms); timers.push(t); return t; };
 
@@ -1360,8 +1360,9 @@ const DUEL = (()=>{
   }
 
   /* ---------- red: mensajes del rival ---------- */
-  function onMsg(m){
-    if(!m || typeof m!=="object") return;
+  function onMsg(m,src){
+    if(!m || typeof m!=="object" || !net) return;
+    if(src==="relay" && net.via==="rtc" && net.started) toRelay(net);
     net.lastRecv=now();
     if(m.t==="s" && st && st.rt){ st.rt.x=+m.x; st.rt.y=+m.y; st.rt.a=+m.a; st.rt.hp=Math.max(0,Math.min(100,+m.hp)); st.b.reloading=!!m.r; }
     else if(m.t==="shot" && st && st.p){
@@ -1380,20 +1381,118 @@ const DUEL = (()=>{
     else if(m.t==="round" && net.role==="guest" && st && (st.phase==="live"||st.phase==="dead"||st.phase==="freeze")){
       st.pScore=+m.gs; st.bScore=+m.hs; postRound(m.w==="g"?"p":m.w==="h"?"b":null);
     }
-    else if(m.t==="hello"){ net.opp.nick=String(m.nick||net.opp.nick||"RIVAL").replace(/[<>]/g,"").toUpperCase().slice(0,14); if(net.role==="host" && !net.started){ net.started=true; send({t:"start"}); begin(); } }
+    else if(m.t==="hello"){
+      if(!net.via){ net.via=src; if(src==="relay") closePc(net); }
+      net.opp.nick=String(m.nick||net.opp.nick||"RIVAL").replace(/[<>]/g,"").toUpperCase().slice(0,14);
+      if(net.role==="host" && !net.started){ net.started=true; send({t:"start"}); begin(); }
+    }
     else if(m.t==="start" && net.role==="guest" && !net.started){ net.started=true; begin(); }
     else if(m.t==="bye"){ opponentLeft(); }
   }
   function opponentLeft(){
     if(!net || net.left) return; net.left=true;
     if(running && st && st.phase!=="over"){ banner("Tu rival se desconectó", "Ganás por abandono"); later(()=>finishMatch(true),1600); }
-    else if(search){ setOnline("Se cortó la conexión", "Buscando otro rival…"); restartSearch(); }
+    else { closeNet(true); setOnline("Se cortó la conexión", "Buscando otro rival…",true); restartSearch(); }
   }
-  function closeNet(){
-    if(!net) return;
-    try{ send({t:"bye"}); }catch(e){}
-    const n=net; net=null;
-    setTimeout(()=>{ try{ n.conn&&n.conn.close(); }catch(e){} try{ n.peer&&n.peer.destroy(); }catch(e){} },300);
+
+  /* ---------- transporte: directo (WebRTC) o por el servidor ---------- */
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  let icePromise=null;
+  function getIce(){
+    if(!icePromise) icePromise=fetch("/api/ice",{cache:"no-store"}).then(r=>r.json()).then(j=>j.iceServers||[]).catch(()=>{ icePromise=null; return [{urls:"stun:stun.l.google.com:19302"}]; });
+    return icePromise;
+  }
+  function gathered(pc,ms){
+    return new Promise(res=>{
+      if(pc.iceGatheringState==="complete") return res();
+      const t=setTimeout(res,ms);
+      pc.addEventListener("icegatheringstatechange",()=>{ if(pc.iceGatheringState==="complete"){ clearTimeout(t); res(); } });
+    });
+  }
+  function closePc(n){ try{ n.dc&&n.dc.close(); }catch(e){} try{ n.pc&&n.pc.close(); }catch(e){} n.dc=null; n.pc=null; }
+  function toRelay(n){
+    if(n.via==="relay") return;
+    n.via="relay"; closePc(n); n.out({t:"ping"});
+    clearTimeout(n.relayT); relayLoop(n);
+  }
+  function wireDc(n,dc){
+    n.dc=dc;
+    dc.onopen=()=>{ if(net!==n) return; if(n.role==="guest" && !n.via){ n.via="rtc"; clearTimeout(n.pickT); n.out({t:"hello",nick:nick()}); } };
+    dc.onmessage=e=>{ if(net!==n) return; let m; try{ m=JSON.parse(e.data); }catch(err){ return; } onMsg(m,"rtc"); };
+    dc.onclose=()=>{ if(net===n && n.via==="rtc" && !n.left && !n.closed) toRelay(n); };
+  }
+  const sig=(n,body)=>api("/api/match",Object.assign({pid:PID,room:n.room},body));
+  async function rtcGuest(n){
+    const pc=new RTCPeerConnection({iceServers:await getIce()}); if(net!==n){ pc.close(); return; }
+    n.pc=pc; wireDc(n,pc.createDataChannel("gc",{ordered:true}));
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc,2500); if(net!==n || n.via) return;
+    await sig(n,{action:"signal",kind:"offer",sdp:pc.localDescription.sdp});
+    for(let i=0;i<40 && net===n && !n.via;i++){
+      const j=await sig(n,{action:"wait",kind:"answer"}).catch(()=>({}));
+      if(j.sdp==="RELAY") throw new Error("relay");
+      if(j.sdp){ if(n.pc===pc) await pc.setRemoteDescription({type:"answer",sdp:j.sdp}); return; }
+      await sleep(350);
+    }
+  }
+  async function rtcHost(n){
+    const ice=getIce();
+    for(let i=0;i<50 && net===n && !n.via;i++){
+      const j=await sig(n,{action:"wait",kind:"offer"}).catch(()=>({}));
+      if(j.sdp){
+        const pc=new RTCPeerConnection({iceServers:await ice}); if(net!==n || n.via){ pc.close(); return; }
+        n.pc=pc; pc.ondatachannel=e=>{ if(net===n) wireDc(n,e.channel); };
+        await pc.setRemoteDescription({type:"offer",sdp:j.sdp});
+        await pc.setLocalDescription(await pc.createAnswer());
+        await gathered(pc,2500); if(net!==n || n.via) return;
+        await sig(n,{action:"signal",kind:"answer",sdp:pc.localDescription.sdp});
+        return;
+      }
+      await sleep(350);
+    }
+  }
+  async function relayLoop(n){
+    if(net!==n || n.closed) return;
+    const msgs=n.outbox.splice(0,60);
+    try{
+      const j=await sig(n,{action:"relay",role:n.role==="host"?"h":"g",msgs});
+      if(net===n) (j.msgs||[]).forEach(m=>onMsg(m,"relay"));
+    }catch(e){ if(net===n) n.outbox.unshift(...msgs.filter(m=>m.t!=="s")); }
+    if(net===n && !n.closed) n.relayT=setTimeout(()=>relayLoop(n), n.via==="relay" ? 70 : n.via==="rtc" ? 2500 : 700);
+  }
+  function connectTo(j,my){
+    const role=j.role, room = role==="guest" ? j.opp.peer : my.sid;
+    clearTimeout(my.timer); search=null;
+    const n={role, room, opp:{nick:j.opp&&j.opp.nick||"RIVAL"}, via:null, outbox:[], lastRecv:now(), started:false, left:false, closed:false};
+    n.out=(m)=>{
+      if(n.closed) return;
+      if(n.via==="rtc" && n.dc && n.dc.readyState==="open"){ try{ n.dc.send(JSON.stringify(m)); return; }catch(e){} }
+      if(!n.via) return;
+      if(m.t==="s"){ const i=n.outbox.findIndex(x=>x.t==="s"); if(i>=0){ n.outbox[i]=m; return; } }
+      n.outbox.push(m); if(n.outbox.length>120) n.outbox.splice(0,n.outbox.length-120);
+    };
+    net=n;
+    setOnline("¡Rival encontrado!","Conectando con "+n.opp.nick+"…",true);
+    relayLoop(n);
+    const direct = !window.GC_FORCE_RELAY && typeof RTCPeerConnection==="function";
+    if(role==="guest"){
+      const pick=()=>{ if(net===n && !n.via){ n.via="relay"; closePc(n); n.out({t:"hello",nick:nick()}); setOnline("¡Rival encontrado!","Conectando por el servidor…",true); } };
+      if(direct){ rtcGuest(n).catch(pick); n.pickT=setTimeout(pick,11000); } else pick();
+    } else {
+      const noDirect=()=>{ if(net===n && !n.via) sig(n,{action:"signal",kind:"answer",sdp:"RELAY"}).catch(()=>{}); };
+      if(direct) rtcHost(n).catch(noDirect); else noDirect();
+    }
+    n.failT=setTimeout(()=>{ if(net===n && !n.started){ closeNet(true); setOnline("No se pudo conectar con tu rival","Buscando otro…",true); restartSearch(); } },26000);
+  }
+  function closeNet(quiet){
+    const n=net; if(!n) return;
+    net=null; n.closed=true;
+    clearTimeout(n.relayT); clearTimeout(n.pickT); clearTimeout(n.failT);
+    if(!quiet){
+      try{ if(n.dc && n.dc.readyState==="open") n.dc.send(JSON.stringify({t:"bye"})); }catch(e){}
+      api("/api/match",{action:"relay",pid:PID,room:n.room,role:n.role==="host"?"h":"g",msgs:[{t:"bye"}]}).catch(()=>{});
+    }
+    setTimeout(()=>closePc(n),300);
   }
 
   /* ---------- emparejamiento ---------- */
@@ -1401,76 +1500,36 @@ const DUEL = (()=>{
     $("#d-ostatus").textContent=h; $("#d-osub").textContent=sub||"";
     $("#d-radar").hidden=!searching; $("#d-find").hidden=!!searching; $("#d-cancel").hidden=!searching;
   }
-  function loadPeerLib(){
-    if(window.Peer) return Promise.resolve();
-    return new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.src="vendor/peerjs.min.js"; sc.onload=ok; sc.onerror=()=>ko(new Error("lib")); document.head.appendChild(sc); });
-  }
-  async function startSearch(){
+  function startSearch(){
     if(!requireNick()) return;
-    stopSearch();
-    search={id:Math.random(), timer:0};
-    const my=search;
-    setOnline("Conectando…","Preparando la conexión",true);
-    try{ await loadPeerLib(); }catch(e){ setOnline("No se pudo cargar el modo online","Revisá tu conexión o jugá contra el bot"); search=null; return; }
-    if(search!==my) return;
-    let peer;
-    try{ peer=new Peer(undefined,Object.assign({debug:0, config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]}}, window.GC_PEER_OPTS||{})); }
-    catch(e){ setOnline("Tu navegador no soporta el modo online","Probá con Chrome o jugá contra el bot"); search=null; return; }
-    my.peer=peer;
-    peer.on("error",err=>{
-      if(search!==my) return;
-      if(err && err.type==="peer-unavailable"){ setOnline("El rival se fue","Buscando otro…",true); restartSearch(); return; }
-      setOnline("Problema de conexión","Reintentando…",true); restartSearch(3000);
-    });
-    peer.on("connection",c=>{
-      if(search!==my || net){ try{ c.close(); }catch(e){} return; }
-      attach(c,"host",{nick:"RIVAL"});
-    });
-    peer.on("open",id=>{ if(search!==my) return; my.peerId=id; setOnline("Buscando rival…","Esperando a otro jugador conectado",true); poll(); });
+    stopSearch(); closeNet(true);
+    const my={sid:newId().replace(/[^a-zA-Z0-9-]/g,"").slice(0,36), timer:0};
+    search=my;
+    setOnline("Buscando rival…","Conectando con el servidor",true);
+    getIce();
     async function poll(){
-      if(search!==my || net) return;
+      if(search!==my) return;
       try{
-        const j=await api("/api/match",{action:"poll",pid:PID,peer:my.peerId,nick:nick()});
-        if(search!==my || net) return;
-        if(j.status==="matched"){
-          if(j.role==="guest"){
-            setOnline("¡Rival encontrado!", "Conectando con "+j.opp.nick+"…", true);
-            const c=peer.connect(j.opp.peer,{reliable:true,serialization:"json"});
-            attach(c,"guest",j.opp);
-          } else {
-            setOnline("¡Rival encontrado!", "Esperando a "+(j.opp&&j.opp.nick||"tu rival")+"…", true);
-            my.timer=setTimeout(()=>{ if(search===my && !net){ setOnline("No se pudo conectar","Buscando otro rival…",true); restartSearch(); } },12000);
-          }
-          return;
-        }
+        const j=await api("/api/match",{action:"poll",pid:PID,peer:my.sid,nick:nick()});
+        if(search!==my) return;
+        if(j.status==="matched"){ connectTo(j,my); return; }
         const n=Math.max(0,(j.searching||1)-1);
         $("#d-osub").textContent = n ? n+" jugador"+(n>1?"es":"")+" más buscando ahora" : "Sos el único buscando. Pasale el link a un amigo.";
       }catch(e){
-        if(/Falta conectar|503|HTTP 5/.test(e.message)) { setOnline("El modo online no está activo","Jugá contra el bot mientras tanto"); stopSearch(); return; }
+        if(/Falta conectar/.test(e.message)) { setOnline("El modo online no está activo","Jugá contra el bot mientras tanto"); stopSearch(); return; }
         $("#d-osub").textContent="Sin conexión con el servidor, reintentando…";
       }
       my.timer=setTimeout(poll,1500);
     }
-  }
-  function attach(c,role,opp){
-    const my=search;
-    net={conn:c, role, opp:{nick:opp.nick||"RIVAL"}, peer:my&&my.peer, lastRecv:now(), started:false, left:false};
-    clearTimeout(my&&my.timer);
-    const failT=setTimeout(()=>{ if(net && net.conn===c && !c.open){ net=null; try{c.close();}catch(e){} setOnline("No se pudo conectar con tu rival","Buscando otro…",true); restartSearch(); } },10000);
-    c.on("open",()=>{ clearTimeout(failT); if(net&&net.conn===c){ send({t:"hello",nick:nick()}); setOnline("¡Conectado!","Arranca el duelo",true); } });
-    c.on("data",m=>{ if(net&&net.conn===c) onMsg(m); });
-    c.on("close",()=>{ if(net&&net.conn===c) opponentLeft(); });
-    c.on("error",()=>{ if(net&&net.conn===c && !c.open){ clearTimeout(failT); net=null; setOnline("No se pudo conectar con tu rival","Buscando otro…",true); restartSearch(); } });
+    poll();
   }
   function restartSearch(delay){
-    const old=search; if(old){ clearTimeout(old.timer); }
-    search=null; if(old&&old.peer){ try{ old.peer.destroy(); }catch(e){} }
-    net=null;
-    setTimeout(()=>{ if(!$("#duel").hidden && !$("#d-setup").hidden) startSearch(); }, delay||800);
+    stopSearch();
+    setTimeout(()=>{ if(!$("#duel").hidden && !$("#d-setup").hidden && !net) startSearch(); }, delay||900);
   }
   function stopSearch(){
     const old=search; search=null;
-    if(old){ clearTimeout(old.timer); if(old.peer && !(net && net.peer===old.peer)){ try{ old.peer.destroy(); }catch(e){} } api("/api/match",{action:"leave",pid:PID}).catch(()=>{}); }
+    if(old){ clearTimeout(old.timer); api("/api/match",{action:"leave",pid:PID}).catch(()=>{}); }
   }
   function banner(h,p){ const el=$("#d-banner"); el.hidden=false; el.querySelector("h3").textContent=h; el.querySelector("p").textContent=p; el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
 
@@ -1653,8 +1712,8 @@ const DUEL = (()=>{
     if(net){
       const b=st.b, k=Math.min(1,dt*14);
       b.x+=(st.rt.x-b.x)*k; b.y+=(st.rt.y-b.y)*k; b.ang=turn(b.ang,st.rt.a,dt*20); b.hp=st.rt.hp;
-      if(t-(net.sentAt||0)>33){ net.sentAt=t; send({t:"s",x:Math.round(st.p.x*10)/10,y:Math.round(st.p.y*10)/10,a:Math.round(st.p.ang*1000)/1000,hp:st.p.hp,r:st.p.reloading?1:0}); }
-      if(t-net.lastRecv>6000) opponentLeft();
+      if(t-(net.sentAt||0)>(net.via==="relay"?60:33)){ net.sentAt=t; send({t:"s",x:Math.round(st.p.x*10)/10,y:Math.round(st.p.y*10)/10,a:Math.round(st.p.ang*1000)/1000,hp:st.p.hp,r:st.p.reloading?1:0}); }
+      if(t-net.lastRecv>10000) opponentLeft();
     }
     draw(t); updHud(false);
     raf=requestAnimationFrame(loop);
@@ -1663,7 +1722,7 @@ const DUEL = (()=>{
   function renderMode(){
     document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.mode===mode)));
     $("#d-online").hidden = mode!=="online"; $("#d-diffs").hidden = mode!=="bot"; $("#d-botstart").hidden = mode!=="bot";
-    if(mode==="bot") stopSearch(); else setOnline("Te emparejamos con otro jugador conectado","Funciona mejor si los dos están en el wifi del evento.");
+    if(mode==="bot") stopSearch(); else if(!search && !net) setOnline("Te emparejamos con otro jugador conectado","Funciona con wifi o datos, desde cualquier lugar.");
   }
   function open(){
     show("duel");
@@ -1694,8 +1753,12 @@ const DUEL = (()=>{
   $("#d-start").addEventListener("click",()=>{ net=null; begin(); });
   document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{ mode=b.dataset.mode; sfx.tick(); renderMode(); }));
   $("#d-find").addEventListener("click",startSearch);
-  $("#d-cancel").addEventListener("click",()=>{ stopSearch(); setOnline("Búsqueda cancelada","Tocá Buscar rival cuando quieras"); });
-  window.addEventListener("pagehide",()=>{ if(net) send({t:"bye"}); });
+  $("#d-cancel").addEventListener("click",()=>{ stopSearch(); closeNet(); setOnline("Búsqueda cancelada","Tocá Buscar rival cuando quieras"); });
+  window.addEventListener("pagehide",()=>{
+    if(!net) return;
+    try{ if(net.dc && net.dc.readyState==="open") net.dc.send(JSON.stringify({t:"bye"})); }catch(e){}
+    try{ navigator.sendBeacon("/api/match", new Blob([JSON.stringify({action:"relay",pid:PID,room:net.room,role:net.role==="host"?"h":"g",msgs:[{t:"bye"}]})],{type:"application/json"})); }catch(e){}
+  });
   $("#d-dash").addEventListener("pointerdown",e=>{ e.preventDefault(); dash(); });
   $("#d-reload").addEventListener("pointerdown",e=>{ e.preventDefault(); if(st) startReload(st.p,now()); });
   return {open};

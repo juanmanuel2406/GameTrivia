@@ -13,6 +13,33 @@ export default async function handler(req, res) {
     if (pid.length < 8) return send(res, 400, { ok: false, error: "Datos inválidos" });
     const now = Date.now();
 
+    // Señalización WebRTC: guarda la oferta / respuesta de cada sala por 90 s
+    const room = clean(b.room), kind = b.kind === "offer" || b.kind === "answer" ? b.kind : "";
+    if (b.action === "signal") {
+      const sdp = String(b.sdp || "");
+      if (!room || !kind || !sdp || sdp.length > 20000) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      await pipeline([["SET", "gc:sig:" + room + ":" + kind, sdp, "EX", "90"]]);
+      return send(res, 200, { ok: true });
+    }
+    if (b.action === "wait") {
+      if (!room || !kind) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      const [sdp] = await pipeline([["GET", "gc:sig:" + room + ":" + kind]]);
+      return send(res, 200, { ok: true, sdp: sdp || null });
+    }
+    // Retransmisión por el servidor: plan B cuando la conexión directa no es posible
+    if (b.action === "relay") {
+      const role = b.role === "h" ? "h" : b.role === "g" ? "g" : "";
+      if (!room || !role) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      const msgs = (Array.isArray(b.msgs) ? b.msgs : []).slice(0, 60).map((m) => JSON.stringify(m)).filter((m) => m.length < 600);
+      const mine = "gc:rl:" + room + ":" + role, theirs = "gc:rl:" + room + ":" + (role === "h" ? "g" : "h");
+      const cmds = [];
+      if (msgs.length) cmds.push(["RPUSH", mine, ...msgs], ["EXPIRE", mine, "120"]);
+      cmds.push(["LPOP", theirs, "200"]);
+      const r = await pipeline(cmds);
+      const got = r[r.length - 1];
+      return send(res, 200, { ok: true, msgs: (Array.isArray(got) ? got : got ? [got] : []).map((m) => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean) });
+    }
+
     if (b.action === "leave") {
       await pipeline([["DEL", "gc:mq:alive:" + pid], ["ZREM", "gc:mq:online", pid]]);
       return send(res, 200, { ok: true });
