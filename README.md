@@ -17,6 +17,17 @@ Minijuegos de Valorant para el evento de Gaming City. Es una sola página estát
 
 Cada push a `main` vuelve a publicar la página.
 
+## Ranking online (obligatorio para anotar jugadores)
+El ranking guarda los puntajes en una base Upstash Redis gratis, conectada desde Vercel:
+1. En Vercel abrí el proyecto → **Storage** → **Create Database** → **Upstash for Redis** (plan Free) → conectalo a este proyecto.
+2. En **Settings → Environment Variables** agregá `ADMIN_KEY` con la clave que quieras para el panel. Si no la ponés, la clave es `gamingcity2026`.
+3. **Deployments** → los tres puntitos del último deploy → **Redeploy**.
+
+- **Panel del organizador:** `/admin.html`. Podio, todos los jugadores con su mejor puntaje por juego, últimas partidas, CSV y reinicio.
+- **Puntaje total** = suma del mejor puntaje de cada juego. Repetir un juego solo suma si mejora su marca.
+- Cada celular tiene su propio ID: dos jugadores con el mismo apodo aparecen por separado (con `#xxxx`).
+- Si falla la conexión, el puntaje queda guardado en el celular y se reenvía solo.
+
 ## Premios
 Cada partida termina con un ticket que tiene apodo, puntaje y un código de 6 caracteres. En el **Modo presentador → Verificar ticket** cargás esos datos y te dice si el ticket es real.
 

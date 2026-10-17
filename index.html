@@ -198,6 +198,21 @@ h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s
 .best li{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}
 .best li b{font-family:var(--display);font-size:20px;font-weight:800}
 .actions{display:flex;flex-wrap:wrap;gap:10px}
+.podium{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.podium li{display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);padding:10px 14px}
+.podium li .pos{font-family:var(--display);font-weight:900;font-size:28px;line-height:1;color:var(--muted)}
+.podium li:nth-child(1) .pos{color:var(--gold)}.podium li:nth-child(2) .pos{color:#cfd6de}.podium li:nth-child(3) .pos{color:#d08b5b}
+.podium li .nm{font-family:var(--display);font-weight:800;font-size:22px;text-transform:uppercase;overflow-wrap:anywhere;min-width:0}
+.podium li .nm small{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:6px;letter-spacing:1px}
+.podium li .pts{font-family:var(--display);font-weight:900;font-size:24px;font-variant-numeric:tabular-nums}
+.podium li.me{border-color:var(--teal)}
+.podium-wrap{margin-top:22px;display:grid;gap:10px}
+.podium-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.podium-head h3{font-family:var(--display);font-weight:900;font-size:32px;text-transform:uppercase;margin:0;line-height:1}
+.podium-head span{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+.host-podium .podium li .nm{font-size:clamp(22px,3vw,34px)}.host-podium .podium li .pts{font-size:clamp(24px,3.2vw,38px)}
+.rank-line{margin-top:14px;font-family:var(--display);font-weight:800;font-size:22px;text-transform:uppercase;color:var(--teal)}
+.rank-line.off{color:var(--muted);font-size:16px;font-family:var(--body);text-transform:none;font-weight:500}
 .shards{position:fixed;inset:0;pointer-events:none;z-index:20}
 
 /* Presentador */
@@ -317,6 +332,11 @@ h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s
         <span class="go">Abrir →</span>
       </button>
     </div>
+    <section class="podium-wrap" id="lobby-podium" hidden>
+      <div class="podium-head"><h3>Podio en vivo</h3><span id="lobby-podium-meta"></span></div>
+      <ol class="podium" id="lobby-podium-list"></ol>
+      <p class="hint" style="margin:0;color:var(--muted);font-size:13px">Tu total es la suma de tu mejor puntaje en cada juego. Jugá los cinco para subir.</p>
+    </section>
     <div class="foot">
       <span>Juego de fans para el evento de Gaming City. Valorant es una marca de Riot Games.</span>
       <span>Datos actualizados a octubre de 2026</span>
@@ -451,6 +471,7 @@ h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s
           <dt>Hora</dt><dd id="res-time">—</dd>
           <dt>Código</dt><dd class="code" id="res-code">——————</dd>
         </dl>
+        <div class="rank-line off" id="res-rankline">Guardando en el ranking…</div>
       </div>
       <div class="side">
         <div class="box">
@@ -494,6 +515,10 @@ h1 .slice{display:inline-block;color:var(--red);animation:slice .9s steps(1) .3s
     </div>
 
     <div class="side" style="margin-top:18px">
+      <div class="host-podium">
+        <div class="podium-head"><h3>Podio en vivo</h3><span id="host-podium-meta">Cargando…</span></div>
+        <ol class="podium" id="host-podium-list" style="margin-top:10px"></ol>
+      </div>
       <div class="live-q">
         <b>Pregunta en vivo: gran final de Champions Shanghái (18 de octubre)</b>
         LOUD ya está en la final. ¿Quién gana el título y se lleva el millón de dólares? Hacé que la tribuna apueste por un equipo.
@@ -650,12 +675,55 @@ $("#sound-btn").addEventListener("click",()=>{ soundOn=!soundOn; store.set("gc_s
   if(img.complete && img.naturalWidth) ok(); else { img.addEventListener("load",ok); img.addEventListener("error",()=>img.remove()); }
 });
 
+/* ================== RANKING ONLINE ================== */
+const PID = (()=>{ let id=store.get("gc_pid",null); if(!id){ id = (window.crypto&&crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)); store.set("gc_pid",id); } return id; })();
+async function api(path, body){
+  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {cache:"no-store"});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || !j.ok) throw new Error(j.error||("HTTP "+r.status));
+  return j;
+}
+async function submitScore(entry){
+  try { const j = await api("/api/score", entry); flushPending(); return j; }
+  catch(e){ const q=store.get("gc_pending",[]); q.push(entry); store.set("gc_pending", q.slice(-30)); return null; }
+}
+let flushing=false;
+async function flushPending(){
+  if(flushing) return; flushing=true;
+  let q=store.get("gc_pending",[]);
+  while(q.length){ try{ await api("/api/score", q[0]); q.shift(); store.set("gc_pending",q); }catch(e){ break; } }
+  flushing=false;
+}
+const fmt = n => Number(n).toLocaleString("es-AR");
+function renderPodium(list, rows, limit){
+  list.innerHTML="";
+  rows.slice(0,limit).forEach((r,i)=>{
+    const li=document.createElement("li"); if(r.tag===PID.slice(-4) && r.nick===nick()) li.className="me";
+    li.innerHTML='<span class="pos">'+(i+1)+'</span><span class="nm"></span><span class="pts"></span>';
+    li.children[1].textContent=r.nick; const sm=document.createElement("small"); sm.textContent="#"+r.tag; li.children[1].appendChild(sm);
+    li.children[2].textContent=fmt(r.total);
+    list.appendChild(li);
+  });
+}
+async function loadLobbyPodium(){
+  try{
+    const j=await api("/api/leaderboard");
+    const box=$("#lobby-podium");
+    if(!j.top.length){ box.hidden=false; $("#lobby-podium-list").innerHTML='<li><span class="pos">—</span><span class="nm">Nadie jugó todavía</span><span class="pts"></span></li>'; $("#lobby-podium-meta").textContent="Sé el primero"; return; }
+    renderPodium($("#lobby-podium-list"), j.top, 5);
+    $("#lobby-podium-meta").textContent=j.players+" jugador"+(j.players===1?"":"es")+" anotados";
+    box.hidden=false;
+  }catch(e){ $("#lobby-podium").hidden=true; }
+}
+flushPending(); loadLobbyPodium();
+
 /* ================== NAVEGACIÓN ================== */
 const SCREENS = ["lobby","trivia","agent","aim","react","duel","result","host"];
 let cleanup = null;
 function show(id){
   if (cleanup){ cleanup(); cleanup=null; }
   SCREENS.forEach(s => $("#"+s).hidden = (s!==id));
+  if(id==="lobby") loadLobbyPodium();
   window.scrollTo({top:0});
 }
 function nick(){ return ($("#nick").value.trim() || "").toUpperCase(); }
@@ -932,6 +1000,13 @@ function finish(game,score,detail,rank){
   (function count(t){ const p=Math.min(1,(t-t0)/900); cur=Math.round(score*(1-Math.pow(1-p,3))); el.innerHTML=cur+" <small>PTS</small>"; if(p<1) requestAnimationFrame(count); })(t0);
   $("#res-best").innerHTML = Object.keys(GAME_NAMES).map(g=>"<li><span>"+GAME_NAMES[g]+"</span><b>"+(best[g]!=null?best[g]:"—")+"</b></li>").join("");
   sfx.win(); burst();
+  const line=$("#res-rankline"); line.className="rank-line off"; line.textContent="Guardando en el ranking…";
+  submitScore({pid:PID, nick:name, game, score:Math.round(score), detail}).then(j=>{
+    if(!$("#result").hidden){
+      if(j){ line.className="rank-line pop"; line.textContent="Puesto #"+j.rank+" de "+j.players+" · Total "+fmt(j.total)+" pts"; }
+      else { line.className="rank-line off"; line.textContent="No se pudo guardar en el ranking por la conexión. Se reintenta solo cuando vuelvas a jugar."; }
+    }
+  });
 }
 $("#res-again").addEventListener("click",()=>start(lastGame));
 
@@ -1283,7 +1358,12 @@ function startHost(){
     else if(e.key===" "){ e.preventDefault(); revealHost(); }
   };
   document.addEventListener("keydown",hostKeys);
-  cleanup=()=>document.removeEventListener("keydown",hostKeys);
+  const refresh=async()=>{
+    try{ const j=await api("/api/leaderboard"); renderPodium($("#host-podium-list"), j.top, 5); $("#host-podium-meta").textContent = j.players+" anotados · se actualiza solo"; if(!j.top.length) $("#host-podium-meta").textContent="Todavía nadie jugó"; }
+    catch(e){ $("#host-podium-meta").textContent="Ranking no disponible"; }
+  };
+  refresh(); const iv=setInterval(refresh,5000);
+  cleanup=()=>{ document.removeEventListener("keydown",hostKeys); clearInterval(iv); };
 }
 function renderHost(){
   const q=hostOrder[hostI]; hostRevealed=false;
