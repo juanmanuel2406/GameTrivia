@@ -3,9 +3,7 @@
 const URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
-export const GAMES = ["duel", "trivia", "agent", "aim", "react"];
-// Puntaje máximo posible por juego: lo que supere esto se rechaza.
-export const MAX = { duel: 15400, trivia: 19000, agent: 8000, aim: 14000, react: 1200 };
+export const RANK = "gc:rank"; // ranking del Duelo 1v1
 
 export const ready = () => Boolean(URL && TOKEN);
 
@@ -37,4 +35,13 @@ export function send(res, status, body) {
 
 export function fail(res, e) {
   send(res, e.status || 500, { ok: false, error: e.message === "no_db" ? "Falta conectar la base de datos (Upstash Redis) en Vercel." : "Error del servidor" });
+}
+
+export const num = (v) => Number(v || 0);
+export function stats(p) {
+  return {
+    total: num(p.total), ptsOnline: num(p.pts_online), bestBot: num(p.best_bot),
+    wins: num(p.wins), losses: num(p.losses), roundsWon: num(p.rounds_won), roundsLost: num(p.rounds_lost),
+    kills: num(p.kills), matches: num(p.matches), onlineMatches: num(p.online_matches),
+  };
 }

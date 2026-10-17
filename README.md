@@ -1,48 +1,27 @@
-# Gaming City Arcade
+# Gaming City · Duelo 1v1
 
-Minijuegos de Valorant para el evento de Gaming City. Es una sola página estática (`index.html`), sin build ni dependencias.
+Duelo 1v1 online estilo Valorant para el evento de Gaming City. Es un sitio estático (`index.html`, `style.css`, `app.js`) con funciones en `/api` para Vercel. No tiene build ni dependencias.
 
-## Registro e Instagram
-La primera vez que alguien entra ve un cartel que le pide seguir a **@gamingcitycomputacion** y **@gamingcitybelgrano** (tiene que abrir las dos). Después crea su jugador con apodo, usuario de Instagram y un PIN de 4 números. Con el @ y el PIN puede entrar desde otro celular. Instagram no permite comprobar automáticamente quién sigue a quién, así que el panel muestra el @ de cada jugador para chequearlo antes de entregar el premio.
+## El juego
+- **4 agentes**, con una habilidad cada uno: Ráfaga (dash), Niebla (humo), Bastión (muro) y Pulso (radar).
+- **Fase de compra** en cada ronda, con créditos al estilo Valorant: Classic, Sheriff, Spectre, Vandal, Operator, escudo liviano y escudo pesado. Si sobrevivís, conservás arma y escudo.
+- **Primero a 7 rondas.** A las 6 rondas se cambia de lado y se reinician los créditos. Con 6–6 se juega una ronda decisiva con 5000 créditos.
+- **Niebla de guerra:** solo ves al rival si hay línea de visión (paredes, muros y humos la cortan). Si el rival corre, se ven sus pasos.
+- Controles para celular (dos pulgares) y para compu (WASD + mouse).
+- **Práctica contra bot** en Hierro, Oro o Radiante.
 
-Cada jugador tiene **Mi registro** con su total, su puesto, su mejor marca en cada juego y sus últimas partidas.
+## Online
+Empareja a dos personas que estén buscando rival al mismo tiempo, desde cualquier red:
+1. **Conexión directa** entre los dos dispositivos (WebRTC). La señalización pasa por `/api/match` y Upstash.
+2. **TURN** (`/api/ice`) para redes que bloquean la conexión directa. Opcional: `CF_TURN_KEY_ID` + `CF_TURN_KEY_API_TOKEN` (Cloudflare) o `METERED_APP` + `METERED_API_KEY`.
+3. **Plan B por el servidor:** si no hay conexión directa, o si se corta en medio de la partida, el juego sigue retransmitido por `/api/match`.
 
-## Duelo 1v1 online
-Empareja a dos personas que estén buscando rival al mismo tiempo, desde cualquier red (wifi o datos):
-1. **Conexión directa** entre los dos celulares (WebRTC). La señalización pasa por `/api/match` y Upstash, sin servicios externos.
-2. **TURN** (`/api/ice`) para redes que bloquean la conexión directa. Viene con Open Relay gratis. Opcional para más capacidad: `CF_TURN_KEY_ID` + `CF_TURN_KEY_API_TOKEN` (Cloudflare) o `METERED_APP` + `METERED_API_KEY`.
-3. **Plan B por el servidor**: si no hay conexión directa en ~11 s, o si se corta en medio de la partida, el juego sigue retransmitido por `/api/match`.
+## Registro, ranking y panel
+- Primera visita: cartel para seguir a **@gamingcitycomputacion** y **@gamingcitybelgrano**. Después el jugador se registra con apodo, Instagram y un PIN.
+- **Puntos:** una victoria online da 100 + 10 por ronda ganada; una derrota online da 10 por ronda ganada. Contra el bot cuenta solo la mejor partida (Hierro 20, Oro 40, Radiante 70 al ganar, + 2 por ronda).
+- **Panel del organizador:** `/admin.html`, con clave `ADMIN_KEY` (por defecto `gamingcity2026`). Tiene podio, jugadores con su Instagram, últimas partidas, CSV y reinicio.
 
-## Juegos
-- **Duelo 1v1**: shooter 2D contra un bot (Hierro, Oro o Radiante). Gana el primero en llegar a 5 rounds.
-- **Trivia**: 12 preguntas al azar de un banco de 45.
-- **Adiviná el agente**: 3 pistas por ronda.
-- **Puntería**: 30 segundos de blancos.
-- **Defuse**: test de reflejos.
-- **Modo presentador**: preguntas para proyectar y verificador de tickets para entregar premios.
-
-## Deploy en Vercel
-1. En vercel.com: **Add New → Project** e importar este repo.
-2. Framework Preset: **Other**. No hace falta build command ni output directory.
-3. Deploy. El link queda en `https://<nombre>.vercel.app`.
-
-Cada push a `main` vuelve a publicar la página.
-
-## Ranking online (obligatorio para anotar jugadores)
-El ranking guarda los puntajes en una base Upstash Redis gratis, conectada desde Vercel:
-1. En Vercel abrí el proyecto → **Storage** → **Create Database** → **Upstash for Redis** (plan Free) → conectalo a este proyecto.
-2. En **Settings → Environment Variables** agregá `ADMIN_KEY` con la clave que quieras para el panel. Si no la ponés, la clave es `gamingcity2026`.
-3. **Deployments** → los tres puntitos del último deploy → **Redeploy**.
-
-- **Panel del organizador:** `/admin.html`. Podio, todos los jugadores con su mejor puntaje por juego, últimas partidas, CSV y reinicio.
-- **Puntaje total** = suma del mejor puntaje de cada juego. Repetir un juego solo suma si mejora su marca.
-- Cada celular tiene su propio ID: dos jugadores con el mismo apodo aparecen por separado (con `#xxxx`).
-- Si falla la conexión, el puntaje queda guardado en el celular y se reenvía solo.
-
-## Premios
-Cada partida termina con un ticket que tiene apodo, puntaje y un código de 6 caracteres. En el **Modo presentador → Verificar ticket** cargás esos datos y te dice si el ticket es real.
-
-## Logo
-Se carga desde `https://www.gamingcity.com.ar/empresa/logo400x400.jpg`. Si no carga, se muestra un logotipo de respaldo.
+## Deploy
+Vercel con **Upstash for Redis** conectado desde Storage. Cada push a `main` publica la página.
 
 Juego de fans. Valorant es una marca de Riot Games.

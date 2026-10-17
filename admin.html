@@ -117,10 +117,10 @@ td:first-child{font-family:var(--display);font-weight:900;font-size:20px}
 
     <div class="grid2">
       <div class="box">
-        <h2><span>Todos los jugadores · total = suma del mejor puntaje de cada juego</span><input id="filter" placeholder="Buscar apodo" style="font-size:14px;padding:6px 10px;width:180px"></h2>
+        <h2><span>Todos los jugadores · online: victoria 100 + 10 por ronda · bot: solo la mejor partida</span><input id="filter" placeholder="Buscar apodo" style="font-size:14px;padding:6px 10px;width:180px"></h2>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>#</th><th>Apodo</th><th>Total</th><th>Duelo</th><th>Trivia</th><th>Agente</th><th>Puntería</th><th>Defuse</th><th>Partidas</th><th>Última</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Apodo</th><th>Puntos</th><th>Victorias</th><th>Derrotas</th><th>Rondas</th><th>Elim.</th><th>Mejor bot</th><th>Partidas</th><th>Última</th><th></th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
@@ -142,8 +142,7 @@ td:first-child{font-family:var(--display);font-weight:900;font-size:20px}
 
 <script>
 const $=s=>document.querySelector(s);
-const GAMES=["duel","trivia","agent","aim","react"];
-const NAMES={duel:"Duelo 1v1",trivia:"Trivia",agent:"Adiviná el agente",aim:"Puntería",react:"Defuse"};
+
 const fmt=n=>Number(n).toLocaleString("es-AR");
 const time=t=>t?new Date(t).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}):"—";
 let KEY=""; try{ KEY=sessionStorage.getItem("gc_admin")||""; }catch(e){}
@@ -169,7 +168,7 @@ async function load(){
 function render(){
   const ps=data.players;
   $("#k-players").textContent=fmt(ps.length);
-  $("#k-plays").textContent=fmt(ps.reduce((s,p)=>s+p.plays,0));
+  $("#k-plays").textContent=fmt(ps.reduce((s,p)=>s+p.matches,0));
   $("#k-top").textContent=ps[0]?fmt(ps[0].total):"0";
   // podio: orden visual 2 · 1 · 3
   const pod=$("#podium"); pod.innerHTML="";
@@ -177,7 +176,7 @@ function render(){
     const p=ps[i], d=document.createElement("div");
     d.className="step p"+(i+1)+(p?"":" empty");
     d.innerHTML='<span class="pos">'+(i+1)+'</span><span class="nm"></span><span class="tag"></span><span class="pts"></span>';
-    d.children[1].textContent=p?p.nick:"—"; d.children[2].textContent=p?(p.ig?"@"+p.ig+" · ":"#"+p.tag+" · ")+p.plays+" partidas":"Libre";
+    d.children[1].textContent=p?p.nick:"—"; d.children[2].textContent=p?(p.ig?"@"+p.ig+" · ":"#"+p.tag+" · ")+p.wins+" V / "+p.matches+" P":"Libre";
     d.children[3].textContent=p?fmt(p.total)+" pts":"";
     pod.appendChild(d);
   });
@@ -186,14 +185,14 @@ function render(){
   ps.forEach((p,i)=>{
     if(q && !p.nick.includes(q)) return;
     const tr=document.createElement("tr"); if(i<3) tr.className="top"+(i+1);
-    const cells=[String(i+1), null, fmt(p.total), ...GAMES.map(g=>p.best[g]!=null?fmt(p.best[g]):null), String(p.plays), time(p.last), null];
+    const cells=[String(i+1), null, fmt(p.total), String(p.wins), String(p.losses), p.roundsWon+"–"+p.roundsLost, String(p.kills), p.bestBot?fmt(p.bestBot):null, String(p.matches), time(p.last), null];
     cells.forEach((c,k)=>{
       const td=document.createElement("td");
       if(k===1){ td.className="nick"; td.textContent=p.nick; const s=document.createElement("small"); s.textContent="#"+p.tag; td.appendChild(s); if(p.ig){ const a=document.createElement("a"); a.className="ig"; a.href="https://www.instagram.com/"+encodeURIComponent(p.ig)+"/"; a.target="_blank"; a.rel="noopener"; a.textContent="@"+p.ig; td.appendChild(a); } }
       else if(k===2){ td.className="total"; td.textContent=c; }
       else if(k===10){ const b=document.createElement("button"); b.className="btn ghost small"; b.textContent= pendingRemove===p.pid?"¿Confirmar?":"Quitar"; b.onclick=()=>removeP(p.pid); td.appendChild(b); }
       else if(c==null){ td.innerHTML='<span class="none">—</span>'; }
-      else { td.textContent=c; if(k>=3&&k<=7){ const g=GAMES[k-3]; if(p.detail[g]) td.title=p.detail[g]; } }
+      else { td.textContent=c; }
       tr.appendChild(td);
     });
     tb.appendChild(tr);
@@ -204,8 +203,8 @@ function render(){
     const li=document.createElement("li");
     li.innerHTML="<b></b><span><em></em> · </span>";
     li.firstChild.textContent=r.nick;
-    li.children[1].firstChild.textContent=fmt(r.score)+" pts";
-    li.children[1].append(NAMES[r.game]+" · "+(r.detail||"")+" · "+time(r.t));
+    li.children[1].firstChild.textContent="+"+fmt(r.pts)+" pts";
+    li.children[1].append((r.won?"Victoria ":"Derrota ")+r.rw+"–"+r.rl+" · "+(r.mode==="online"?"vs "+(r.opp||"rival"):"vs bot "+(r.diff||""))+(r.forfeit?" (abandono)":"")+" · "+time(r.t));
     feed.appendChild(li);
   });
   if(!data.recent.length) feed.innerHTML='<li><span>Sin partidas todavía</span></li>';
@@ -243,9 +242,9 @@ $("#reset").onclick=async()=>{
 };
 $("#csv").onclick=()=>{
   if(!data) return;
-  const head=["Puesto","Apodo","Instagram","ID","Total",...GAMES.map(g=>NAMES[g]),"Partidas","Primera vez","Última vez"];
+  const head=["Puesto","Apodo","Instagram","ID","Puntos","Puntos online","Mejor vs bot","Victorias","Derrotas","Rondas ganadas","Rondas perdidas","Eliminaciones","Partidas","Primera vez","Última vez"];
   const esc=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.ig?"@"+p.ig:"",p.tag,p.total,...GAMES.map(g=>p.best[g]??""),p.plays,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
+  const lines=[head.map(esc).join(",")].concat(data.players.map((p,i)=>[i+1,p.nick,p.ig?"@"+p.ig:"",p.tag,p.total,p.ptsOnline,p.bestBot,p.wins,p.losses,p.roundsWon,p.roundsLost,p.kills,p.matches,new Date(p.created).toLocaleString("es-AR"),new Date(p.last).toLocaleString("es-AR")].map(esc).join(",")));
   const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="ranking-gaming-city.csv"; document.body.appendChild(a); a.click(); a.remove();
 };

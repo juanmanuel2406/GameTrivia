@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { pipeline, toObj, send, fail, GAMES } from "./_db.js";
+import { pipeline, toObj, send, fail, RANK, stats } from "./_db.js";
 
 const cleanPid = (v) => String(v || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 40);
 const cleanIg = (v) => String(v || "").trim().toLowerCase().replace(/^@+/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
@@ -12,16 +12,14 @@ export default async function handler(req, res) {
       const pid = cleanPid(req.query && req.query.pid);
       if (pid.length < 8) return send(res, 400, { ok: false, error: "Falta el jugador" });
       const [raw, hist, rank, count] = await pipeline([
-        ["HGETALL", "gc:p:" + pid], ["LRANGE", "gc:h:" + pid, "0", "29"], ["ZREVRANK", "gc:total", pid], ["ZCARD", "gc:total"],
+        ["HGETALL", "gc:p:" + pid], ["LRANGE", "gc:h:" + pid, "0", "29"], ["ZREVRANK", RANK, pid], ["ZCARD", RANK],
       ]);
       const p = toObj(raw);
       if (!p.nick) return send(res, 404, { ok: false, error: "No encontramos tu registro" });
-      const best = {};
-      GAMES.forEach((g) => { if (p["best_" + g] != null) best[g] = Number(p["best_" + g]); });
       return send(res, 200, {
-        ok: true, nick: p.nick, ig: p.ig || "", total: Number(p.total || 0), plays: Number(p.plays || 0),
-        rank: rank == null ? null : Number(rank) + 1, players: Number(count), best,
-        history: hist.map((h) => { try { return JSON.parse(h); } catch { return null; } }).filter(Boolean),
+        ok: true, nick: p.nick, ig: p.ig || "", ...stats(p),
+        rank: rank == null ? null : Number(rank) + 1, players: Number(count),
+        history: hist.map((h) => { try { return JSON.parse(h); } catch { return null; } }).filter((h) => h && h.mode),
       });
     }
     if (req.method !== "POST") return send(res, 405, { ok: false, error: "Método no permitido" });
@@ -41,7 +39,7 @@ export default async function handler(req, res) {
         ["HSET", "gc:p:" + pid, "nick", nick, "ig", ig, "pinh", hashPin(ig, pin), "follows", "1", "registered", now],
         ["HSETNX", "gc:p:" + pid, "created", now],
         ["HSETNX", "gc:p:" + pid, "total", "0"],
-        ["ZADD", "gc:total", "NX", "0", pid],
+        ["ZADD", RANK, "NX", "0", pid],
       ]);
       return send(res, 200, { ok: true, pid, nick, ig });
     }
