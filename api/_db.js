@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Conexión a Upstash Redis por REST (sin dependencias).
 // Vercel la configura sola al conectar "Upstash for Redis" desde Storage.
 const URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -13,6 +15,7 @@ export async function pipeline(cmds) {
     method: "POST",
     headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
     body: JSON.stringify(cmds),
+    signal: AbortSignal.timeout(4500),
   });
   if (!r.ok) throw Object.assign(new Error("db_http_" + r.status), { status: 502 });
   const out = await r.json();
@@ -20,6 +23,17 @@ export async function pipeline(cmds) {
     if (x.error) throw Object.assign(new Error(x.error), { status: 502 });
     return x.result;
   });
+}
+
+// Send only the script hash on the hot path. Reload only if Redis evicted it;
+// never retry ambiguous writes automatically after an HTTP/network failure.
+export async function runScript(lua, args) {
+  const sha = createHash("sha1").update(lua).digest("hex");
+  try { return (await pipeline([["EVALSHA", sha, "0", ...args]]))[0]; }
+  catch (e) {
+    if (!/NOSCRIPT|No matching script/i.test(e.message)) throw e;
+    return (await pipeline([["EVAL", lua, "0", ...args]]))[0];
+  }
 }
 
 export const toObj = (arr) => {

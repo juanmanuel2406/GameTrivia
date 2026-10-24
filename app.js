@@ -14,8 +14,13 @@ const now = () => performance.now();
 const newId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
 const isTouch = () => matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
 async function api(path, body) {
-  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
-  const j = await r.json().catch(() => ({}));
+  if (path === "/api/match" && body) body = { ...body, protocol: 3 };
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 6500);
+  let r, j;
+  try {
+    r = await fetch(path, { ...(body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), cache: "no-store", signal: controller.signal });
+    j = await r.json().catch(() => ({}));
+  } finally { clearTimeout(timer); }
   if (!r.ok || !j.ok) { const e = new Error(j.error || ("HTTP " + r.status)); e.status = r.status; throw e; }
   return j;
 }
@@ -96,7 +101,7 @@ function openGate(step) { $("#gate").hidden = false; document.body.style.overflo
 function closeGate() { $("#gate").hidden = true; document.body.style.overflow = ""; }
 function renderIg() {
   $$(".ig-btn").forEach((a) => { const ok = igOpened.has(a.dataset.ig); a.classList.toggle("done", ok); a.querySelector(".ig-state").textContent = ok ? "✓ Listo" : "Seguir"; });
-  $("#gate-follow-ok").disabled = igOpened.size < 2;
+  $("#gate-follow-ok").disabled = $$(".ig-btn").some(a => !igOpened.has(a.dataset.ig));
 }
 $$(".ig-btn").forEach((a) => a.addEventListener("click", () => { igOpened.add(a.dataset.ig); store.set("gc_ig_opened", [...igOpened]); setTimeout(renderIg, 400); }));
 $("#gate-follow-ok").addEventListener("click", () => { store.set("gc_follow", true); AU.ui(); gateStep("gate-register"); setTimeout(() => $("#reg-nick").focus(), 50); });
@@ -307,7 +312,7 @@ $("#f-input").addEventListener("input", (e) => { e.target.value = e.target.value
 $("#f-join").addEventListener("submit", (e) => {
   e.preventDefault(); AU.unlock();
   const code = $("#f-input").value.trim().toUpperCase();
-  if (code.length !== 4) { $("#f-msg").textContent = "El código tiene 4 caracteres."; return; }
+  if (code.length !== 6) { $("#f-msg").textContent = "El código tiene 6 caracteres."; return; }
   goFullscreen(); $("#f-msg").style.color = "var(--muted)"; $("#f-msg").textContent = "Entrando a la sala " + code + "…"; $("#f-code-box").hidden = true;
   NET.joinRoom(code, 1, (err) => { $("#f-msg").style.color = "var(--red)"; $("#f-msg").textContent = err; });
 });
@@ -330,33 +335,56 @@ $("#b-start").addEventListener("click", () => { AU.unlock(); goFullscreen(); GAM
    RED: conexión directa (WebRTC) con plan B por el servidor
    ========================================================= */
 const NET = (() => {
-  let search = null, net = null, icePromise = null, lastMatch = null;
+  let search = null, net = null, icePromise = null, iceExpires = 0, lastMatch = null;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function getIce() {
-    if (!icePromise) icePromise = fetch("/api/ice", { cache: "no-store" }).then((r) => r.json()).then((j) => j.iceServers || []).catch(() => { icePromise = null; return [{ urls: "stun:stun.l.google.com:19302" }]; });
+    if (Date.now() >= iceExpires) icePromise = null;
+    if (!icePromise) {
+      iceExpires = Date.now() + 10 * 60 * 1000;
+      icePromise = api("/api/ice").then(j => j.iceServers || []).catch(() => {
+        icePromise = null; return [{ urls: "stun:stun.l.google.com:19302" }];
+      });
+    }
     return icePromise;
   }
   function gathered(pc, ms) {
+    // espera a que estén los candidatos; si ya apareció uno de retransmisión (TURN) no hace falta esperar todo
     return new Promise((res) => {
       if (pc.iceGatheringState === "complete") return res();
-      const t = setTimeout(res, ms);
-      pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); res(); } });
+      let done = false, relayT = 0;
+      const fin = () => { if (!done) { done = true; clearTimeout(t); clearTimeout(relayT); res(); } };
+      const t = setTimeout(fin, ms);
+      pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") fin(); });
+      pc.addEventListener("icecandidate", (e) => { if (e.candidate && / typ relay /.test(e.candidate.candidate) && !relayT) relayT = setTimeout(fin, 400); });
     });
   }
   const sig = (n, body) => api("/api/match", Object.assign({ pid: PID, room: n.room }, body));
-  function closePc(n) { try { n.dc && n.dc.close(); } catch (e) {} try { n.pc && n.pc.close(); } catch (e) {} n.dc = null; n.pc = null; }
+  function closePc(n) { try { n.dc && n.dc.close(); } catch (e) {} try { n.st && n.st.close(); } catch (e) {} try { n.pc && n.pc.close(); } catch (e) {} n.dc = null; n.st = null; n.pc = null; }
   function toRelay(n) { if (n.via === "relay") return; n.via = "relay"; closePc(n); n.out({ t: "ping" }); clearTimeout(n.relayT); relayLoop(n); badge(); }
+  // dos canales: "st" rápido y sin reenvíos para la posición (si se pierde uno, vale el siguiente) y "gc" garantizado para disparos y rondas
+  function wireSt(n, ch) {
+    n.st = ch;
+    ch.onmessage = (e) => { if (net !== n) return; let m; try { m = JSON.parse(e.data); } catch (err) { return; } recv(m, "rtc"); };
+  }
+  async function pairType(n) {
+    try {
+      const stats = await n.pc.getStats(); let pair = null; const loc = {};
+      stats.forEach((r) => { if (r.type === "candidate-pair" && (r.nominated || r.selected) && r.state === "succeeded") pair = r; if (r.type === "local-candidate") loc[r.id] = r; });
+      if (pair && loc[pair.localCandidateId]) n.turn = loc[pair.localCandidateId].candidateType === "relay";
+      badge();
+    } catch (e) {}
+  }
   function wireDc(n, dc) {
     n.dc = dc;
-    dc.onopen = () => { if (net !== n) return; if (n.role === "guest" && !n.via) { n.via = "rtc"; clearTimeout(n.pickT); hello(n); } };
+    dc.onopen = () => { if (net !== n) return; setTimeout(() => net === n && n.pc && pairType(n), 600); if (n.role === "guest" && !n.via) { n.via = "rtc"; clearTimeout(n.pickT); hello(n); } };
     dc.onmessage = (e) => { if (net !== n) return; let m; try { m = JSON.parse(e.data); } catch (err) { return; } recv(m, "rtc"); };
     dc.onclose = () => { if (net === n && n.via === "rtc" && !n.left && !n.closed) toRelay(n); };
   }
   async function rtcGuest(n) {
-    const pc = new RTCPeerConnection({ iceServers: await getIce() }); if (net !== n) { pc.close(); return; }
-    n.pc = pc; wireDc(n, pc.createDataChannel("gc", { ordered: true }));
+    const pc = new RTCPeerConnection({ iceServers: await getIce(), iceCandidatePoolSize: 2 }); if (net !== n) { pc.close(); return; }
+    n.pc = pc; wireDc(n, pc.createDataChannel("gc", { ordered: true })); wireSt(n, pc.createDataChannel("st", { ordered: false, maxRetransmits: 0 }));
     await pc.setLocalDescription(await pc.createOffer());
-    await gathered(pc, 2500); if (net !== n || n.via) return;
+    await gathered(pc, 4000); if (net !== n || n.via) return;
     await sig(n, { action: "signal", kind: "offer", sdp: pc.localDescription.sdp });
     for (let i = 0; i < 40 && net === n && !n.via; i++) {
       const j = await sig(n, { action: "wait", kind: "answer" }).catch(() => ({}));
@@ -370,36 +398,67 @@ const NET = (() => {
     for (let i = 0; i < 50 && net === n && !n.via; i++) {
       const j = await sig(n, { action: "wait", kind: "offer" }).catch(() => ({}));
       if (j.sdp) {
-        const pc = new RTCPeerConnection({ iceServers: await ice }); if (net !== n || n.via) { pc.close(); return; }
-        n.pc = pc; pc.ondatachannel = (e) => { if (net === n) wireDc(n, e.channel); };
+        const pc = new RTCPeerConnection({ iceServers: await ice, iceCandidatePoolSize: 2 }); if (net !== n || n.via) { pc.close(); return; }
+        n.pc = pc; pc.ondatachannel = (e) => { if (net !== n) return; if (e.channel.label === "st") wireSt(n, e.channel); else wireDc(n, e.channel); };
         await pc.setRemoteDescription({ type: "offer", sdp: j.sdp });
         await pc.setLocalDescription(await pc.createAnswer());
-        await gathered(pc, 2500); if (net !== n || n.via) return;
+        await gathered(pc, 4000); if (net !== n || n.via) return;
         await sig(n, { action: "signal", kind: "answer", sdp: pc.localDescription.sdp });
         return;
       }
       await sleep(350);
     }
   }
+  // One in-flight exchange preserves order. The exact batch is retried until
+  // acknowledged; received events stay on Redis until our next ack arrives.
   async function relayLoop(n) {
-    if (net !== n || n.closed) return;
-    const msgs = n.outbox.splice(0, 60);
+    if (net !== n || n.closed || n.inflight) return;
+    n.inflight = true;
+    const began = now();
+    if (!n.pending) {
+      const msgs = n.outbox.splice(0, 60);
+      n.pending = { action: "relay", seq: ++n.seq, ack: n.ack, msgs, state: n.state || null };
+      n.state = null;
+    }
     try {
-      const j = await sig(n, { action: "relay", role: n.role === "host" ? "h" : "g", msgs });
-      if (net === n) (j.msgs || []).forEach((m) => recv(m, "relay"));
-    } catch (e) { if (net === n) n.outbox.unshift(...msgs.filter((m) => m.t !== "s")); }
-    if (net === n && !n.closed) n.relayT = setTimeout(() => relayLoop(n), n.via === "relay" ? 60 : n.via === "rtc" ? 2500 : 700);
+      const j = await sig(n, n.pending);
+      if (net !== n) return;
+      n.pending = null; n.errors = 0;
+      for (const event of j.events || []) {
+        if (event.id <= n.ack) continue;
+        recv(event.m, "relay"); n.ack = event.id;
+      }
+      if (j.state) recv(j.state, "relay");
+      if (j.left) left();
+    } catch (e) {
+      if (net === n) {
+        n.errors = (n.errors || 0) + 1;
+        if ([400,403,404,409].includes(e.status)) { close(true); GAME.connectionLost(); }
+      }
+    } finally {
+      n.inflight = false;
+      if (net === n && !n.closed) {
+        const delay = n.errors ? Math.min(2000, 250 * 2 ** Math.min(n.errors-1,3)) + Math.random()*150
+          : n.via === "relay" ? Math.max(25, 65 - (now()-began)) : n.via === "rtc" ? 2000 : 300;
+        clearTimeout(n.relayT);
+        n.relayT = setTimeout(() => relayLoop(n), delay);
+      }
+    }
   }
   function hello(n) { n.out({ t: "hello", nick: nick(), agent: agentId }); }
   function recv(m, src) {
     const n = net; if (!m || typeof m !== "object" || !n) return;
+    if (m.t === "s") {
+      if (!Number.isFinite(m.q) || m.q <= (n.stateQ || 0)) return;
+      n.stateQ = m.q;
+    }
     if (src === "relay" && n.via === "rtc" && n.started) toRelay(n);
     n.lastRecv = now();
     if (m.t === "hello") {
       if (!n.via) { n.via = src; if (src === "relay") closePc(n); }
       n.opp.nick = String(m.nick || "RIVAL").replace(/[<>]/g, "").toUpperCase().slice(0, 14);
       n.opp.agent = AGENTS[m.agent] ? m.agent : "rafaga";
-      if (n.role === "host" && !n.started) { n.started = true; n.out({ t: "start", nick: nick(), agent: agentId }); launch(n); }
+      if (n.role === "host") { n.out({ t: "start", nick: nick(), agent: agentId }); if (!n.started) { n.started = true; launch(n); } }
       return;
     }
     if (m.t === "start") {
@@ -412,6 +471,8 @@ const NET = (() => {
     }
     if (m.t === "bye") { left(); return; }
     if (m.t === "ping") return;
+    if (m.t === "pi") { n.out({ t: "po", i: m.i }); return; }
+    if (m.t === "po") { const rtt = now() - (+m.i || 0); if (rtt >= 0 && rtt < 5000) { n.rtt = n.rtt ? n.rtt * .7 + rtt * .3 : rtt; badge(); } return; }
     if (n.started) GAME.onNet(m);
   }
   function launch(n) {
@@ -426,19 +487,43 @@ const NET = (() => {
   function badge() {
     const b = $("#net-badge"); if (!b) return;
     if (!net || !net.via) { b.hidden = true; return; }
-    b.hidden = false; b.textContent = net.via === "rtc" ? "Conexión directa" : "Conexión por servidor";
+    const ms = net.rtt ? Math.round(net.rtt) : 0;
+    b.hidden = false; b.className = "net-badge " + (!ms ? "" : ms < 90 ? "good" : ms < 180 ? "ok" : "bad");
+    b.innerHTML = "<i></i>" + (net.via === "rtc" ? (net.turn ? "Directa · TURN" : "Directa") : "Servidor") + (ms ? " · " + ms + " ms" : "");
   }
+  setInterval(() => {
+    const n = net; if (!n || !n.via) return;
+    if (!n.started && n.role === "guest") hello(n);
+    if (n.started) {
+      if (n.via === "rtc" && now()-n.lastRecv > 3000) toRelay(n);
+      n.out({ t: "pi", i: Math.round(now()) });
+      if (now()-n.lastRecv > 3000) { const b = $("#net-badge"); b.hidden = false; b.textContent = "Reconectando…"; }
+    }
+  }, 1000);
+  window.addEventListener("online", () => {
+    const n = net; if (!n) return;
+    if (n.via === "rtc") toRelay(n);
+    else { clearTimeout(n.relayT); relayLoop(n); }
+  });
   function connectTo(j, my) {
     const role = j.role, room = role === "guest" ? j.opp.peer : my.sid;
     clearTimeout(my.timer); search = null;
     lastMatch = { room, role, oppNick: (j.opp && j.opp.nick) || "RIVAL" };
-    const n = { role, room, opp: { nick: (j.opp && j.opp.nick) || "RIVAL", agent: "rafaga" }, via: null, outbox: [], lastRecv: now(), started: false, left: false, closed: false };
+    const n = { role, room, opp: { nick: (j.opp && j.opp.nick) || "RIVAL", agent: "rafaga" }, via: null, outbox: [], seq: 0, ack: 0, pending: null, state: null, lastRecv: now(), started: false, left: false, closed: false };
     n.out = (m) => {
       if (n.closed) return;
-      if (n.via === "rtc" && n.dc && n.dc.readyState === "open") { try { n.dc.send(JSON.stringify(m)); return; } catch (e) {} }
+      if (n.via === "rtc" && n.dc && n.dc.readyState === "open") {
+        try {
+          const fast = m.t === "s" || m.t === "pi" || m.t === "po";
+          if (fast && n.st && n.st.readyState === "open") { if (n.st.bufferedAmount < 16000) n.st.send(JSON.stringify(m)); return; }
+          if (m.t === "s" && n.dc.bufferedAmount > 32000) return; // red saturada: se descarta la posición vieja
+          n.dc.send(JSON.stringify(m)); return;
+        } catch (e) {}
+      }
       if (!n.via) return;
-      if (m.t === "s") { const i = n.outbox.findIndex((x) => x.t === "s"); if (i >= 0) { n.outbox[i] = m; return; } }
-      n.outbox.push(m); if (n.outbox.length > 150) n.outbox.splice(0, n.outbox.length - 150);
+      if (m.t === "s") { n.state = m; return; }
+      if (n.outbox.length >= 512) { close(true); GAME.connectionLost(); return; }
+      n.outbox.push(m);
     };
     net = n;
     setSearch("¡Rival encontrado!", "Conectando con " + n.opp.nick + "…", true); AU.beep(1200);
@@ -459,7 +544,7 @@ const NET = (() => {
     clearTimeout(n.relayT); clearTimeout(n.pickT); clearTimeout(n.failT);
     if (!quiet) {
       try { if (n.dc && n.dc.readyState === "open") n.dc.send(JSON.stringify({ t: "bye" })); } catch (e) {}
-      api("/api/match", { action: "relay", pid: PID, room: n.room, role: n.role === "host" ? "h" : "g", msgs: [{ t: "bye" }] }).catch(() => {});
+      api("/api/match", { action: "exit", pid: PID, room: n.room }).catch(() => {});
     }
     setTimeout(() => closePc(n), 300); badge();
   }
@@ -482,18 +567,28 @@ const NET = (() => {
         if (/Falta conectar/.test(e.message)) { setSearch("El modo online no está activo", "Avisale al organizador. Mientras, podés practicar contra el bot.", false); stopSearch(); return; }
         $("#s-sub").textContent = "Sin conexión con el servidor, reintentando…";
       }
-      my.timer = setTimeout(poll, 1500);
+      my.timer = setTimeout(poll, 1100 + Math.random() * 400);
     }
     poll();
   }
   function restart(delay) { const wasPrivate = !!(lastMatch && lastMatch.private); stopSearch(); setTimeout(() => { if (!$("#select").hidden && !net && selMode === "online" && !wasPrivate) searchStart(); }, delay || 900); }
   const newSid = () => newId().replace(/[^a-zA-Z0-9-]/g, "").slice(0, 36);
+  async function searchRequest(my, body) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (search !== my) throw new Error("Búsqueda cancelada");
+      try { return await api("/api/match", body); }
+      catch (e) {
+        if (attempt === 2 || (e.status && e.status < 500)) throw e;
+        await sleep(400 * (attempt + 1));
+      }
+    }
+  }
   async function createRoom(code, onCode, onErr) {
     if (!requirePlayer()) return;
     stopSearch(); close(true);
     const my = { sid: newSid(), timer: 0, private: true }; search = my;
     try {
-      const j = await api("/api/match", { action: "code_create", pid: PID, peer: my.sid, nick: nick(), code: code || "" });
+      const j = await searchRequest(my, { action: "code_create", pid: PID, peer: my.sid, nick: nick(), code: code || "" });
       if (search !== my) return; my.code = j.code; onCode && onCode(j.code);
     } catch (e) { if (search === my) search = null; onErr && onErr(/Falta conectar/.test(e.message) ? "El modo online no está activo." : e.message); return; }
     getIce();
@@ -504,7 +599,7 @@ const NET = (() => {
         if (search !== my) return;
         if (j.status === "matched") { connectTo(j, my); lastMatch.private = true; return; }
       } catch (e) {}
-      my.timer = setTimeout(poll, 1300);
+      my.timer = setTimeout(poll, 1000 + Math.random() * 400);
     }
     poll();
   }
@@ -516,7 +611,7 @@ const NET = (() => {
     for (let i = 0; i < tries; i++) {
       if (search !== my) return;
       try {
-        const j = await api("/api/match", { action: "code_join", pid: PID, peer: my.sid, nick: nick(), code });
+        const j = await searchRequest(my, { action: "code_join", pid: PID, peer: my.sid, nick: nick(), code });
         if (search !== my) return;
         connectTo(j, my); lastMatch.private = true; return;
       } catch (e) {
@@ -525,11 +620,13 @@ const NET = (() => {
       }
     }
   }
-  function stopSearch() { const old = search; search = null; if (old) { clearTimeout(old.timer); api("/api/match", { action: "leave", pid: PID }).catch(() => {}); } }
-  window.addEventListener("pagehide", () => {
-    if (!net) return;
-    try { if (net.dc && net.dc.readyState === "open") net.dc.send(JSON.stringify({ t: "bye" })); } catch (e) {}
-    try { navigator.sendBeacon("/api/match", new Blob([JSON.stringify({ action: "relay", pid: PID, room: net.room, role: net.role === "host" ? "h" : "g", msgs: [{ t: "bye" }] })], { type: "application/json" })); } catch (e) {}
+  function stopSearch() { const old = search; search = null; if (old) { clearTimeout(old.timer); api("/api/match", { action: "leave", pid: PID, peer: old.sid }).catch(() => {}); } }
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) return;
+    const body = net ? { action: "exit", pid: PID, room: net.room }
+      : search ? { action: "leave", pid: PID, peer: search.sid } : null;
+    if (!body) return;
+    try { navigator.sendBeacon("/api/match", new Blob([JSON.stringify({ ...body, protocol: 3 })], { type: "application/json" })); } catch (e) {}
   });
   return {
     search: searchStart,
@@ -540,6 +637,11 @@ const NET = (() => {
       if (lm.role === "host") createRoom(code, null, onErr); else joinRoom(code, 25, onErr);
     },
     lastOpp: () => (lastMatch ? lastMatch.oppNick : ""),
+    room: () => (lastMatch ? lastMatch.room : ""),
+    async claim() { // victoria por abandono: el servidor decide un solo ganador
+      if (!lastMatch) return null;
+      try { const j = await api("/api/match", { action: "claim", pid: PID, room: lastMatch.room }); return j.decided ? !!j.winner : undefined; } catch (e) { return null; }
+    },
     searching: () => !!search || !!(net && !net.started),
     cancel() { stopSearch(); close(); },
     close,
@@ -565,7 +667,8 @@ const GAME = (() => {
   const WAYPOINTS = [[560, 120], [560, 590], [560, 230], [560, 470], [390, 210], [730, 490], [300, 390], [820, 310], [480, 350], [640, 350], [210, 80], [910, 620], [910, 80], [210, 620]];
   const BOTS = { hierro: { react: 620, err: .16, speed: .85, label: "Hierro" }, oro: { react: 360, err: .085, speed: .95, label: "Oro" }, radiante: { react: 200, err: .04, speed: 1.03, label: "Radiante" } };
 
-  let cv = $("#cv"), ctx = cv.getContext("2d"), fog = document.createElement("canvas"), fctx = fog.getContext("2d");
+  let cv = $("#cv"), ctx = cv.getContext("2d", { alpha: false }), fog = document.createElement("canvas"), fctx = fog.getContext("2d");
+  const bgc = document.createElement("canvas"), bctx = bgc.getContext("2d"); let bgKey = "";
   let dpr = 1, cw = 0, ch = 0, zoom = 1;
   let M = null, S = null, raf = 0, last = 0, input = null, timers = [];
   const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
@@ -627,7 +730,8 @@ const GAME = (() => {
     const role = opts.role || "host";
     M = { mode: opts.mode, role, diff: opts.diff || "oro", agent: opts.agent, oppNick: opts.oppNick || "RIVAL", oppAgent: opts.oppAgent || "rafaga",
       side: (opts.mode === "bot" || role === "host") ? "L" : "R", score: { me: 0, opp: 0 }, history: [], roundNo: 0, half: false, ot: false, over: false,
-      econ: econNew(), botEcon: econNew(), stats: { kills: 0, deaths: 0, shots: 0, hits: 0, dmg: 0 }, startedAt: Date.now(), result: null, pending: null };
+      econ: econNew(), botEcon: econNew(), stats: { kills: 0, deaths: 0, shots: 0, hits: 0, dmg: 0 }, startedAt: Date.now(), result: null, pending: null,
+      mid: (opts.mode === "online" ? "o-" + (NET.room() || newId()) : "b-" + newId()).replace(/[^a-zA-Z0-9-_:]/g, "").slice(0, 70), lastStateAt: now() };
     $("#game").hidden = false; document.body.style.overflow = "hidden"; document.documentElement.classList.add("game-open");
     M.bg = !!opts.bg;
     $("#end").hidden = true; $("#confirm").hidden = true; $("#buy").hidden = true; $("#banner").hidden = true;
@@ -647,23 +751,34 @@ const GAME = (() => {
     const oppSide = M.side === "L" ? "R" : "L";
     const p = mkFighter(M.side, M.agent), o = mkFighter(oppSide, M.oppAgent);
     p.w = M.econ.keepW; p.ammo = WEAPONS[p.w].mag; p.sh = M.econ.keepSh;
-    M.econ.boughtW = null; M.econ.boughtSh = 0;
+    M.econ.boughtW = null; M.econ.boughtSh = 0; M.lastCredits = null; M.lastStateAt = now();
     if (!online()) { botBuy(o); }
     const t = now(), long = M.roundNo === 1 || M.justHalf || M.justOT;
+    const autoBuy = long;
     S = { p, o, smokes: [], barriers: [], tracers: [], sparks: [], pops: [], rings: [], parts: [], shells: [],
       phase: "buy", phaseEnd: t + (long ? BUY_LONG : BUY_MS), roundEnd: 0, reveal: 0, lastSeen: null, cam: { x: p.x + 160 * (M.side === "L" ? 1 : -1), y: p.y, shake: 0 },
-      rt: { x: o.x, y: o.y, a: o.a, hp: 100, sh: 0, w: "classic", t: t, px: o.x, py: o.y }, ai: { seenAt: 0, target: null, wp: null, stuckT: t, lx: o.x, ly: o.y, burst: 0, strafeUntil: 0, dir: 1, aimErr: 0, wanderUntil: 0 },
-      hitmark: -1e9, alertUntil: 0, deadAt: 0, fogSeg: null };
+      rt: { x: o.x, y: o.y, vx: 0, vy: 0, a: o.a, hp: 100, sh: 0, w: "classic", t: t, q: 0 }, ai: { seenAt: 0, target: null, wp: null, stuckT: t, lx: o.x, ly: o.y, burst: 0, strafeUntil: 0, dir: 1, aimErr: 0, wanderUntil: 0 },
+      hitmark: -1e9, alertUntil: 0, deadAt: 0, fogSeg: null, autoBuy };
     M.justHalf = false; M.justOT = false;
     const sub = M.ot ? "Ronda decisiva" : M.score.me === WIN - 1 || M.score.opp === WIN - 1 ? "Punto de partido" : "Primero a " + WIN;
     banner("Ronda " + M.roundNo, "Fase de compra", sub, "", 1500);
     openBuy(true);
+    if (!S.autoBuy && M.econ.credits >= 400) later(() => { if (S && S.phase === "buy" && $("#buy").hidden) alertMsg("Tenés " + fmt(M.econ.credits) + " ¤ · tocá Comprar", 1600); }, 1600);
     hud(true);
   }
+  function countdown(n) {
+    const c = $("#count"); c.textContent = n > 0 ? n : "¡Ya!"; c.className = "count" + (n > 0 ? "" : " go"); c.hidden = false; void c.offsetWidth; c.classList.add("pop");
+    clearTimeout(countdown.t); countdown.t = setTimeout(() => (c.hidden = true), 620);
+    AU.beep(n > 0 ? 660 : 1320); if (n <= 0) buzz(30);
+  }
+  function creditGain(n) {
+    if (!n || n <= 0) return; const g = $("#cr-gain"), r = $("#hud-cr").getBoundingClientRect(), gr = $("#game").getBoundingClientRect();
+    g.textContent = "+" + fmt(n) + " ¤"; g.style.left = (r.left - gr.left) + "px"; g.style.top = (r.bottom - gr.top + 4) + "px";
+    g.hidden = true; void g.offsetWidth; g.hidden = false; clearTimeout(creditGain.t); creditGain.t = setTimeout(() => (g.hidden = true), 1700);
+  }
   function goLive() {
-    S.phase = "live"; S.roundEnd = now() + ROUND_MS; closeBuy();
-    AU.beep(990); setTimeout(() => AU.beep(1320), 120);
-    alertMsg("¡A jugar!", 900);
+    S.phase = "live"; S.roundEnd = now() + ROUND_MS; closeBuy(); countdown(0);
+
   }
   function hostEndRound(winner, cause) {
     if (!S || S.phase !== "live") return;
@@ -672,7 +787,7 @@ const GAME = (() => {
   }
   function applyRoundEnd(winner, cause) {
     if (!S || (S.phase !== "live")) return;
-    S.phase = "post"; S.phaseEnd = now() + POST_MS;
+    S.phase = "post"; S.phaseEnd = now() + POST_MS; M.lastCredits = M.econ.credits;
     if (winner === "me") M.score.me++; else if (winner === "opp") M.score.opp++;
     M.history.push(winner === "me" ? "w" : winner === "opp" ? "l" : "t");
     // economía propia
@@ -680,6 +795,7 @@ const GAME = (() => {
     if (winner === "me") { e.credits += 3000 + (cause === "kill" ? 200 : 0); e.streak = 0; }
     else { e.credits += Math.min(1900 + 500 * e.streak, 2900); e.streak++; }
     e.credits = Math.min(MAX_CR, e.credits);
+    creditGain(e.credits - (M.lastCredits != null ? M.lastCredits : e.credits));
     if (S.p.alive) { e.keepW = S.p.w; e.keepSh = S.p.sh; } else { e.keepW = "classic"; e.keepSh = 0; }
     if (!online()) {
       const b = M.botEcon;
@@ -740,7 +856,7 @@ const GAME = (() => {
     submit(won, !!forfeit);
   }
   async function submit(won, forfeit, quiet) {
-    const body = { pid: PID, nick: nick(), mode: M.mode, won, forfeit, rw: M.score.me, rl: M.score.opp, kills: M.stats.kills, diff: M.diff, opp: M.oppNick, agent: M.agent };
+    const body = { pid: PID, nick: nick(), mode: M.mode, won, forfeit, rw: M.score.me, rl: M.score.opp, kills: M.stats.kills, diff: M.diff, opp: M.oppNick, agent: M.agent, mid: M.mid };
     const h = store.get("gc_hist2", []); h.unshift({ mode: M.mode, won, forfeit, rw: M.score.me, rl: M.score.opp, opp: M.oppNick, diff: M.mode === "bot" ? M.diff : "", pts: 0, t: Date.now() }); store.set("gc_hist2", h.slice(0, 30));
     try {
       await syncPlayer();
@@ -756,12 +872,28 @@ const GAME = (() => {
     const keep = []; for (const b of q) { try { await api("/api/score", b); } catch (e) { keep.push(b); } }
     store.set("gc_pending2", keep);
   }
-  function opponentLeft() {
-    if (!M || M.result) return;
+  async function opponentLeft() {
+    if (!M || M.result || M.leaving) return;
     if (M.over) { finishMatch(); return; } // la partida ya estaba definida: no es abandono
-    banner("Tu rival se desconectó", "Ganás por abandono", "", "win");
-    if (S) S.phase = "end";
-    later(() => finishMatch(true), 1500);
+    const previousPhase = S && S.phase; M.leaving = true; if (S) S.phase = "end";
+    banner("Tu rival se desconectó", "Verificando…", "", "");
+    const mine = M, win = await NET.claim();
+    if (M !== mine || M.result) return;
+    if (win === undefined) { M.leaving = false; M.lastStateAt = now(); if (S) S.phase = previousPhase; banner("Reconectando…", "Esperando a tu rival", "", ""); return; }
+    if (win === null) { noResult("No se pudo verificar el resultado.", "Se perdió la conexión con el servidor. No se asignaron puntos."); return; }
+    if (win) { banner("Tu rival se desconectó", "Ganás por abandono", "", "win"); later(() => finishMatch(true), 1300); }
+    else { M.result = { won: false }; submit(false, false, true); noResultLeft("Se cortó tu conexión y tu rival se quedó con la partida."); }
+  }
+  // sin resultado: se cortaron los dos (o volviste tarde); no se guarda nada
+  function noResult(title, sub) {
+    if (!M || M.result) return;
+    M.result = { won: false, none: true }; if (S) S.phase = "end";
+    if (online()) setTimeout(() => NET.close(), 600);
+    const end = $("#end"); end.hidden = false; end.className = "end lose";
+    $("#end-kicker").textContent = "Duelo online"; $("#end-title").textContent = "Sin resultado";
+    $("#end-me").textContent = M.score.me; $("#end-opp").textContent = M.score.opp; $("#end-vs").textContent = sub;
+    $("#end-stats").innerHTML = ""; $("#end-pts").textContent = title;
+    $("#end-rematch").hidden = true; $("#end-rematch-btn").hidden = true; $("#end-again").textContent = "Nuevo rival";
   }
   function leave() {
     if (M && !M.result && online()) { // salir de un online cuenta como derrota
@@ -801,25 +933,57 @@ const GAME = (() => {
     send({ t: "s", ...stateMsg() });
   }
   function flashCard(id) { const c = $('[data-buy="' + id + '"]'); if (c) c.animate([{ transform: "translateX(-5px)" }, { transform: "translateX(5px)" }, { transform: "none" }], { duration: 250 }); }
-  function openBuy(auto) { if (!S || S.phase !== "buy") return; if (auto && store.get("gc_buy_closed", false) && M.roundNo > 1) return; $("#buy").hidden = false; renderBuy(); }
+  // la tienda se abre sola solo cuando se reinician los créditos (ronda 1, medio tiempo, ronda decisiva); el resto, con el botón
+  function openBuy(auto) { if (!S || S.phase !== "buy") return; if (auto && !S.autoBuy) return; $("#buy").hidden = false; renderBuy(); }
+  // compra rápida: la mejor arma que alcance (sin Operator) y el mejor escudo con lo que sobra
+  function quickPlan() {
+    const e = M.econ, p = S.p, tier = ["classic", "sheriff", "spectre", "vandal"];
+    const refW = e.boughtW ? WEAPONS[e.boughtW].cost : 0, refS = e.boughtSh ? (e.boughtSh === 50 ? 1000 : 400) : 0;
+    const rankNow = p.w === "operator" ? 9 : tier.indexOf(p.w);
+    let w = p.w, spentW = 0;
+    for (const cand of ["vandal", "spectre", "sheriff"]) {
+      if (tier.indexOf(cand) <= rankNow) break;                 // lo que tenés ya es igual o mejor
+      const net = WEAPONS[cand].cost - refW;
+      if (net <= e.credits) { w = cand; spentW = net; break; }
+    }
+    const left = e.credits - spentW;
+    let sh = p.sh, spentS = 0;
+    if (p.sh < 50 && 1000 - refS <= left) { sh = 50; spentS = 1000 - refS; }
+    else if (p.sh < 25 && 400 - refS <= left) { sh = 25; spentS = 400 - refS; }
+    return { w, sh, cost: Math.max(0, spentW + spentS) };
+  }
+  function quickBuy() {
+    if (!S || S.phase !== "buy") return;
+    const q = quickPlan(), p = S.p;
+    if (q.w !== p.w) buy(q.w);
+    if (q.sh > p.sh) buy(q.sh === 50 ? "heavy" : "light");
+    if (q.w === p.w && q.sh <= p.sh) AU.ui();
+    setTimeout(closeBuy, 260);
+  }
   function closeBuy() { $("#buy").hidden = true; }
   function renderBuy() {
     const g = $("#buy-grid"); g.innerHTML = ""; const e = M.econ, p = S.p;
     $("#buy-cr").textContent = fmt(e.credits);
+    const q = quickPlan(), qb = document.createElement("button"); qb.className = "wcard quick"; qb.style.setProperty("--i", 0);
+    const qn = (WEAPONS[q.w] ? WEAPONS[q.w].name : "") + (q.sh ? " + escudo " + (q.sh === 50 ? "pesado" : "liviano") : "");
+    qb.innerHTML = '<span class="wk">Q</span><span class="wc">Compra rápida</span><span class="wn">⚡ Lo mejor</span><span class="ws"></span><span class="wp"></span>';
+    qb.querySelector(".ws").textContent = qn; qb.querySelector(".wp").textContent = q.cost ? fmt(q.cost) + " ¤" : "Ya lo tenés";
+    qb.addEventListener("click", quickBuy); g.appendChild(qb);
     BUY_LIST.forEach((id, i) => {
       const d = WEAPONS[id] || SHIELDS[id], isW = !!WEAPONS[id];
       const owned = isW ? p.w === id : p.sh >= d.val;
       const refund = isW ? (e.boughtW ? WEAPONS[e.boughtW].cost : 0) : (e.boughtSh ? (e.boughtSh === 50 ? 1000 : 400) : 0);
       const can = owned || e.credits + refund >= d.cost;
-      const b = document.createElement("button"); b.className = "wcard" + (owned ? " owned" : "") + (can ? "" : " cant"); b.dataset.buy = id;
-      b.innerHTML = '<span class="wk">' + (i + 1) + '</span><span class="wc">' + d.cls + '</span><span class="wn">' + d.name.replace("Escudo ", "") + "</span>" + (isW ? "<canvas width=\"160\" height=\"26\"></canvas>" : "") + '<span class="ws">' + (isW ? d.dmg + " daño · " + d.note : "+" + d.val + " de escudo") + '</span><span class="wp">' + (owned ? "Equipado" : d.cost ? fmt(d.cost) + " ¤" : "Gratis") + "</span>";
+      const b = document.createElement("button"); b.className = "wcard" + (owned ? " owned" : "") + (can ? "" : " cant"); b.dataset.buy = id; b.style.setProperty("--i", i + 1);
+      b.innerHTML = '<span class="wk">' + (i + 1) + '</span><span class="wc">' + d.cls + '</span><span class="wn">' + d.name.replace("Escudo ", "") + "</span>" + (isW ? "<canvas width=\"160\" height=\"26\"></canvas>" : "") + '<span class="ws">' + (isW ? d.dmg + " daño · " + d.note : "+" + d.val + " de escudo") + '</span><span class="wp">' + (owned ? "✓ Equipado" : d.cost ? fmt(d.cost) + " ¤" : "Gratis") + "</span>";
       b.addEventListener("click", () => buy(id));
       g.appendChild(b);
       if (isW) { const c = b.querySelector("canvas"), x = c.getContext("2d"); x.translate(52, 13); x.scale(1.9, 1.9); drawGun(x, id, owned ? "#3fe0c5" : "#ece8e1"); }
     });
   }
   $("#act-buy").addEventListener("click", () => { if (!S) return; if (S.phase !== "buy") { alertMsg("Solo en la fase de compra", 900); return; } $("#buy").hidden ? openBuy() : closeBuy(); });
-  $("#buy-close").addEventListener("click", () => { closeBuy(); store.set("gc_buy_closed", true); });
+  $("#buy-close").addEventListener("click", () => closeBuy());
+  $("#buy").addEventListener("click", (e) => { if (e.target.id === "buy") closeBuy(); }); // tocar el fondo de la tienda también la cierra
 
   /* ---------- disparos y daño ---------- */
   function startReload(f, t) { const wd = WEAPONS[f.w]; if (f.reloading || f.ammo >= wd.mag) return; f.reloading = true; f.reloadUntil = t + wd.reload; if (f === S.p) AU.reload(); }
@@ -854,7 +1018,11 @@ const GAME = (() => {
     const abs = Math.min(target.sh, dmg); target.sh -= abs; target.hp = Math.max(0, target.hp - (dmg - abs));
     target.hitAt = t;
     S.pops.push({ x: target.x, y: target.y - R - 6, txt: String(dmg), t, good: byMe });
-    if (target === S.p) { AU.hurt(); S.cam.shake = Math.min(14, S.cam.shake + 6); buzz(35); }
+    if (target === S.p) {
+      AU.hurt(); S.cam.shake = Math.min(14, S.cam.shake + 6); buzz(35);
+      const hpEl = $("#hud-hp").parentElement; hpEl.classList.remove("hit"); void hpEl.offsetWidth; hpEl.classList.add("hit");
+      S.hurt = { t, a: Math.atan2(S.o.y - S.p.y, S.o.x - S.p.x) }; // indicador de dirección del daño
+    }
     if (target.hp <= 0 && target.alive) {
       killFighter(target);
       if (target === S.p) { M.stats.deaths++; if (isHost()) hostEndRound("opp", "kill"); else send({ t: "dead" }); }
@@ -872,7 +1040,7 @@ const GAME = (() => {
   /* ---------- habilidades ---------- */
   function useAbility() {
     const p = S && S.p; if (!p || S.phase !== "live" || !p.alive) return;
-    if (p.charges <= 0) { AU.deny(); alertMsg("Sin cargas esta ronda", 900); return; }
+    if (p.charges <= 0) { AU.deny(); alertMsg("Sin cargas esta ronda", 900); const b = $("#act-ab"); b.classList.remove("deny"); void b.offsetWidth; b.classList.add("deny"); return; }
     const id = AGENTS[p.agent].ab.id, t = now();
     if (id === "dash") {
       let mx = input.mx, my = input.my; if (Math.hypot(mx, my) < .1) { mx = Math.cos(p.a); my = Math.sin(p.a); }
@@ -901,14 +1069,24 @@ const GAME = (() => {
   function addBarrier(b, t) { S.barriers.push({ ...b, born: t, until: t + 10000 }); [S.p, S.o].forEach(collide); }
 
   /* ---------- red: mensajes del rival ---------- */
-  function stateMsg() { const p = S.p; return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, a: Math.round(p.a * 1000) / 1000, hp: p.hp, sh: p.sh, w: p.w, r: p.reloading ? 1 : 0, al: p.alive ? 1 : 0, n: M.roundNo }; }
+  let seqOut = 0;
+  function stateMsg() { const p = S.p; return { sc: isHost() ? [M.score.me, M.score.opp] : undefined, q: ++seqOut, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, vx: Math.round(p.vx), vy: Math.round(p.vy), a: Math.round(p.a * 1000) / 1000, hp: p.hp, sh: p.sh, w: p.w, r: p.reloading ? 1 : 0, al: p.alive ? 1 : 0, n: M.roundNo }; }
   function onNet(m) {
     if (!M || !S || M.result) return;
     const t = now();
     if (m.t === "s") {
+      M.lastStateAt = t;
+      if (window.GC_DEBUG) S.dbgS = (S.dbgS || 0) + 1;
+      // autocorrección: si se perdió el aviso de fin de ronda, el marcador del host lo repone
+      if (!isHost() && Array.isArray(m.sc) && S.phase === "live") {
+        const hs = +m.sc[0] || 0, gs = +m.sc[1] || 0;
+        if (hs + gs > M.score.me + M.score.opp) { const w = gs > M.score.me ? "me" : "opp"; applyRoundEnd(w, (w === "me" ? S.rt.hp : S.p.hp) <= 0 ? "kill" : "time"); M.score.me = gs; M.score.opp = hs; M.over = gs >= WIN || hs >= WIN; renderPips(); hud(true); }
+      }
       if (m.n && m.n !== M.roundNo) return; // estado de otra ronda
-      const rt = S.rt; rt.px = rt.x; rt.py = rt.y; rt.pt = rt.t;
-      rt.x = +m.x; rt.y = +m.y; rt.a = +m.a; rt.t = t; rt.hp = clamp(+m.hp, 0, 100); rt.sh = clamp(+m.sh || 0, 0, 50);
+      const rt = S.rt;
+      if (m.q && rt.q && m.q <= rt.q && rt.q - m.q < 1000) return; // llegó desordenado: ya tenemos uno más nuevo
+      rt.q = m.q || 0;
+      rt.x = +m.x; rt.y = +m.y; rt.vx = clamp(+m.vx || 0, -1000, 1000); rt.vy = clamp(+m.vy || 0, -1000, 1000); rt.a = +m.a; rt.t = t; rt.hp = clamp(+m.hp, 0, 100); rt.sh = clamp(+m.sh || 0, 0, 50);
       if (WEAPONS[m.w]) S.o.w = m.w; S.o.reloading = !!m.r;
       if (!m.al && S.o.alive && S.phase === "live") { /* el host confirma la muerte con el mensaje de ronda */ }
     } else if (m.t === "shot") {
@@ -1010,10 +1188,15 @@ const GAME = (() => {
     const ta = Math.atan2(o.y - p.y, o.x - p.x), diff = ((ta - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     return Math.abs(diff) < cone ? a + diff * .82 : a;
   }
+  // el rival se dibuja donde *debería* estar ahora: última posición + velocidad × tiempo transcurrido (hasta 150 ms)
   function remoteThink(t, dt) {
-    const o = S.o, rt = S.rt, k = 1 - Math.exp(-dt * 18);
-    const px = o.x, py = o.y;
-    o.x += (rt.x - o.x) * k; o.y += (rt.y - o.y) * k; o.a = turn(o.a, rt.a, dt * 24);
+    const o = S.o, rt = S.rt, k = 1 - Math.exp(-dt * 26);
+    const px = o.x, py = o.y, age = clamp((t - rt.t) / 1000, 0, .15);
+    let tx = rt.x + (rt.vx || 0) * age, ty = rt.y + (rt.vy || 0) * age;
+    const f = { x: tx, y: ty }; collide(f); tx = f.x; ty = f.y;
+    if (Math.hypot(tx - o.x, ty - o.y) > 160) { o.x = tx; o.y = ty; } // salto grande (ej. inicio de ronda): ir directo
+    else { o.x += (tx - o.x) * k; o.y += (ty - o.y) * k; }
+    o.a = turn(o.a, rt.a, dt * 30);
     o.vx = (o.x - px) / Math.max(dt, .001); o.vy = (o.y - py) / Math.max(dt, .001);
     o.hp = rt.hp; o.sh = rt.sh;
   }
@@ -1022,6 +1205,7 @@ const GAME = (() => {
   function loop(t) {
     if (!M || !S) return;
     const dt = Math.min(.034, (t - last) / 1000); last = t;
+    if (S.phase === "buy") { const left = Math.ceil((S.phaseEnd - t) / 1000); if (left <= 3 && left >= 1 && left !== S.lastCount) { S.lastCount = left; countdown(left); } }
     if (S.phase === "buy" && t >= S.phaseEnd) goLive();
     else if (S.phase === "post" && t >= S.phaseEnd) afterPost();
     else if (S.phase === "half" && t >= S.phaseEnd) startRound();
@@ -1043,8 +1227,9 @@ const GAME = (() => {
     // efectos con tiempo
     S.smokes = S.smokes.filter((s) => t < s.until); S.smokes.forEach((s) => (s.r = s.R * clamp((t - s.born) / 450, 0, 1) * (t > s.until - 600 ? clamp((s.until - t) / 600, 0, 1) * .4 + .6 : 1)));
     const nb = S.barriers.length; S.barriers = S.barriers.filter((b) => t < b.until); if (S.barriers.length !== nb) S.fogSeg = null;
-    if (online() && t - (S.sentAt || 0) > (NET.via() === "relay" ? 60 : 33)) { S.sentAt = t; send({ t: "s", ...stateMsg() }); }
-    if (online() && !M.result && t - NET.lastRecv() > 10000) opponentLeft();
+    if (online() && t - (S.sentAt || 0) > (NET.via() === "relay" ? 50 : 30)) { S.sentAt = t; send({ t: "s", ...stateMsg() }); }
+    // Tras 20 s sin estado, pedir verificación al servidor antes de decidir abandono.
+    if (online() && !M.result && !M.leaving && (S.phase === "buy" || S.phase === "live") && (t - M.lastStateAt > 20000 || t - NET.lastRecv() > 20000)) opponentLeft();
     if (!online()) { const b = $("#net-badge"), on = M.bg && NET.searching(); if (b.hidden === on) { b.hidden = !on; b.textContent = "Buscando rival…"; } }
     camera(dt, t); draw(t); hud(false);
     raf = requestAnimationFrame(loop);
@@ -1062,9 +1247,12 @@ const GAME = (() => {
   /* ---------- dibujo ---------- */
   function resize() {
     const r = cv.getBoundingClientRect(); cw = Math.max(1, r.width); ch = Math.max(1, r.height);
-    dpr = Math.min(2, window.devicePixelRatio || 1); if (cw * ch * dpr * dpr > 2.4e6) dpr = Math.sqrt(2.4e6 / (cw * ch));
-    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); fog.width = cv.width; fog.height = cv.height;
-    zoom = clamp(Math.min(cw / 900, ch / 560), .42, 1.5);
+    // en celulares se dibuja a menos resolución: mucho más fluido y casi no se nota
+    const touch = isTouch(), cap = touch ? 1.5 : 2, budget = touch ? 1.3e6 : 2.4e6;
+    dpr = Math.min(cap, window.devicePixelRatio || 1); if (cw * ch * dpr * dpr > budget) dpr = Math.sqrt(budget / (cw * ch));
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); fog.width = Math.ceil(cv.width / 2); fog.height = Math.ceil(cv.height / 2);
+    bgKey = "";
+    zoom = ch > cw ? clamp(Math.min(cw / 520, ch / 760), .5, 1.2) : clamp(Math.min(cw / 900, ch / 560), .42, 1.5); // vertical: más cerca, la cámara sigue al jugador
     checkRotate();
   }
   function worldTx(c) {
@@ -1088,13 +1276,24 @@ const GAME = (() => {
     }
     ctx.strokeStyle = "rgba(236,232,225,.06)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(560, 350, 105, 0, Math.PI * 2); ctx.stroke();
   }
-  function drawWalls(t) {
-    ctx.fillStyle = "rgba(0,0,0,.35)"; for (const [x, y, w, h] of WALLS) ctx.fillRect(x + 6, y + 8, w, h);
-    for (const [x, y, w, h] of WALLS) {
-      ctx.fillStyle = "#2b3745"; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "#3e4d5e"; ctx.fillRect(x, y, w, Math.min(5, h));
-      ctx.strokeStyle = "rgba(255,70,85,.28)"; ctx.lineWidth = 1.2; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  // piso y paredes no cambian: se dibujan una vez en una capa y después solo se copia
+  function staticLayer() {
+    const sc = clamp(zoom * dpr, .5, 2), key = sc.toFixed(3) + M.side;
+    if (key !== bgKey) {
+      bgKey = key; bgc.width = Math.ceil(W * sc); bgc.height = Math.ceil(H * sc);
+      const keep = ctx; ctx = bctx; ctx.setTransform(sc, 0, 0, sc, 0, 0);
+      drawFloor();
+      ctx.fillStyle = "rgba(0,0,0,.35)"; for (const [x, y, w, h] of WALLS) ctx.fillRect(x + 6, y + 8, w, h);
+      for (const [x, y, w, h] of WALLS) {
+        ctx.fillStyle = "#2b3745"; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#3e4d5e"; ctx.fillRect(x, y, w, Math.min(5, h));
+        ctx.strokeStyle = "rgba(255,70,85,.28)"; ctx.lineWidth = 1.2; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      }
+      ctx = keep;
     }
+    ctx.drawImage(bgc, 0, 0, W, H);
+  }
+  function drawWalls(t) {
     for (const b of S.barriers) {
       const life = clamp((b.until - t) / 10000, 0, 1), grow = clamp((t - b.born) / 220, 0, 1);
       ctx.save(); ctx.globalAlpha = .55 + .45 * grow;
@@ -1135,8 +1334,8 @@ const GAME = (() => {
   function visPoly(px, py) {
     const segs = staticSegs().slice();
     for (const s of S.smokes) { if (s.r < 8) continue; const n = 12; for (let i = 0; i < n; i++) { const a1 = i / n * Math.PI * 2, a2 = (i + 1) / n * Math.PI * 2, rr = s.r * .9; segs.push([s.x + Math.cos(a1) * rr, s.y + Math.sin(a1) * rr, s.x + Math.cos(a2) * rr, s.y + Math.sin(a2) * rr]); } }
-    const angles = [];
-    for (const sg of segs) { for (const [x, y] of [[sg[0], sg[1]], [sg[2], sg[3]]]) { const a = Math.atan2(y - py, x - px); angles.push(a - .0004, a, a + .0004); } }
+    const angles = [], seen = new Set();
+    for (const sg of segs) { for (const [x, y] of [[sg[0], sg[1]], [sg[2], sg[3]]]) { const k = (x | 0) + "," + (y | 0); if (seen.has(k)) continue; seen.add(k); const a = Math.atan2(y - py, x - px); angles.push(a - .0004, a + .0004); } }
     const pts = [];
     for (const a of angles) {
       const dx = Math.cos(a), dy = Math.sin(a); let best = 4000;
@@ -1154,19 +1353,20 @@ const GAME = (() => {
     const p = S.p;
     fctx.setTransform(1, 0, 0, 1, 0, 0); fctx.clearRect(0, 0, fog.width, fog.height);
     fctx.fillStyle = p.alive ? "rgba(5,7,10,.74)" : "rgba(5,7,10,.5)"; fctx.fillRect(0, 0, fog.width, fog.height);
-    if (!p.alive) return ctx.drawImage(fog, 0, 0);
+    if (!p.alive) { ctx.setTransform(1, 0, 0, 1, 0, 0); return ctx.drawImage(fog, 0, 0, cv.width, cv.height); }
     const sx = (Math.random() - .5) * S.cam.shake * 0, sy = 0;
-    fctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * (cw / 2 - S.cam.x * zoom + sx), dpr * (ch / 2 - S.cam.y * zoom + sy));
+    const hd = dpr / 2; // la niebla va a media resolución (borde suave y la mitad de trabajo)
+    fctx.setTransform(hd * zoom, 0, 0, hd * zoom, hd * (cw / 2 - S.cam.x * zoom + sx), hd * (ch / 2 - S.cam.y * zoom + sy));
     fctx.globalCompositeOperation = "destination-out";
     const poly = visPoly(p.x, p.y);
     fctx.beginPath(); poly.forEach((q, i) => (i ? fctx.lineTo(q[1], q[2]) : fctx.moveTo(q[1], q[2]))); fctx.closePath(); fctx.fill();
     fctx.beginPath(); fctx.arc(p.x, p.y, 34, 0, Math.PI * 2); fctx.fill();
     fctx.globalCompositeOperation = "source-over";
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(fog, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(fog, 0, 0, cv.width, cv.height);
   }
   function draw(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#0a0e13"; ctx.fillRect(0, 0, cv.width, cv.height);
-    worldTx(ctx); drawFloor(); drawWalls(t);
+    worldTx(ctx); staticLayer(); drawWalls(t);
     // casquillos y partículas de muerte (debajo)
     S.parts = S.parts.filter((q) => t - q.t < q.life);
     for (const q of S.parts) { const k = (t - q.t) / 1000; const x = q.x + q.vx * k * (1 - k * .6), y = q.y + q.vy * k * (1 - k * .6); ctx.save(); ctx.translate(x, y); ctx.rotate(q.r + q.vr * k); ctx.globalAlpha = 1 - (t - q.t) / q.life; ctx.fillStyle = "rgb(" + q.c + ")"; ctx.beginPath(); ctx.moveTo(0, -q.s); ctx.lineTo(q.s, q.s * .7); ctx.lineTo(-q.s, q.s * .5); ctx.closePath(); ctx.fill(); ctx.restore(); }
@@ -1200,6 +1400,11 @@ const GAME = (() => {
     for (const q of S.pops) { ctx.fillStyle = q.good ? "rgba(242,193,78," + (1 - (t - q.t) / 750) + ")" : "rgba(255,70,85," + (1 - (t - q.t) / 750) + ")"; ctx.fillText(q.txt, q.x, q.y - (t - q.t) / 22); }
     // pantalla: sticks, mira, viñeta
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (S.hurt && t - S.hurt.t < 700 && S.p.alive) {
+      const k = 1 - (t - S.hurt.t) / 700, r = Math.min(cw, ch) * .36, a = S.hurt.a;
+      ctx.strokeStyle = "rgba(255,70,85," + (.85 * k) + ")"; ctx.lineWidth = 7; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(cw / 2, ch / 2, r, a - .32, a + .32); ctx.stroke(); ctx.lineCap = "butt";
+    }
     if (S.p.alive && S.p.hp <= 30) { const g = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * .35, cw / 2, ch / 2, Math.max(cw, ch) * .7); g.addColorStop(0, "rgba(255,70,85,0)"); g.addColorStop(1, "rgba(255,70,85," + (.18 + .08 * Math.sin(t / 180)) + ")"); ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch); }
     if (input) {
       for (const [s, col] of [["move", "rgba(236,232,225,.55)"], ["aim", "rgba(255,70,85,.85)"]]) {
@@ -1223,10 +1428,10 @@ const GAME = (() => {
     if (!S.p.alive && S.phase === "live") { ctx.fillStyle = "rgba(236,232,225,.85)"; ctx.font = "900 28px 'Big Shoulders Display', Impact, sans-serif"; ctx.textAlign = "center"; ctx.fillText("ELIMINADO", cw / 2, ch * .62); }
     if (S.phase === "buy" && isTouch() && input && !input.move && !input.aim && $("#buy").hidden) {
       ctx.save(); ctx.globalAlpha = .55 + .2 * Math.sin(t / 300); ctx.strokeStyle = "rgba(236,232,225,.5)"; ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
-      ctx.beginPath(); ctx.arc(cw * .2, ch * .62, 46, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cw * .8, ch * .62, 46, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(236,232,225,.8)"; ctx.font = "700 12px 'JetBrains Mono', monospace"; ctx.textAlign = "center"; ctx.fillText("MOVERTE", cw * .2, ch * .62 + 66); ctx.fillText("APUNTAR · TOCAR = TIRO", cw * .8, ch * .62 + 66); ctx.restore();
+      ctx.beginPath(); ctx.arc(cw * .2, ch * .55, 46, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cw * .66, ch * .55, 46, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(236,232,225,.8)"; ctx.font = "700 12px 'JetBrains Mono', monospace"; ctx.textAlign = "center"; ctx.fillText("MOVERTE", cw * .2, ch * .55 + 66); ctx.fillText("APUNTAR · TOCAR = TIRO", cw * .66, ch * .55 + 66); ctx.restore();
     }
-    if (S.phase === "buy") { const s = Math.ceil((S.phaseEnd - t) / 1000); if ($("#buy").hidden) { ctx.fillStyle = "rgba(242,193,78,.95)"; ctx.font = "900 26px 'Big Shoulders Display', Impact, sans-serif"; ctx.textAlign = "center"; ctx.fillText("COMPRA · " + s + " S", cw / 2, ch * .78); } }
+    if (S.phase === "buy") { const s = Math.ceil((S.phaseEnd - t) / 1000); if ($("#buy").hidden && s > 3) { ctx.fillStyle = "rgba(242,193,78,.95)"; ctx.font = "900 26px 'Big Shoulders Display', Impact, sans-serif"; ctx.textAlign = "center"; ctx.fillText("COMPRA · " + s + " S", cw / 2, ch * .78); } }
   }
 
   /* ---------- HUD ---------- */
@@ -1238,13 +1443,17 @@ const GAME = (() => {
     if (S.phase === "buy") { secs = Math.max(0, Math.ceil((S.phaseEnd - t) / 1000)); phase = "Compra"; }
     else if (S.phase === "live") { secs = Math.max(0, Math.ceil((S.roundEnd - t) / 1000)); phase = "Ronda " + M.roundNo; }
     else if (S.phase === "post" || S.phase === "half") { secs = 0; phase = S.phase === "half" ? "Medio tiempo" : "Fin de ronda"; }
+    if (p.reloading) $("#act-reload").style.setProperty("--p", (1 - clamp((p.reloadUntil - t) / wd.reload, 0, 1)).toFixed(3)); else $("#act-reload").style.setProperty("--p", 0);
     const key = [p.hp, p.sh, p.ammo, p.reloading, p.w, p.charges, M.econ.credits, secs, phase, M.score.me, M.score.opp, S.phase].join("|");
     if (!force && key === hudKey) return; hudKey = key;
     $("#hud-hp").textContent = p.hp; $("#hud-hp").parentElement.classList.toggle("low", p.hp <= 30 && p.alive);
     $("#hud-sh").textContent = p.sh; $("#hud-sh").parentElement.style.opacity = p.sh ? 1 : .45;
     $("#hud-cr").textContent = fmt(M.econ.credits);
     $("#hud-wname").textContent = wd.name; $("#hud-ammo").textContent = p.reloading ? "—" : p.ammo; $("#hud-ammo").parentElement.classList.toggle("low", !p.reloading && p.ammo <= Math.ceil(wd.mag * .2));
-    $("#ab-ch").textContent = p.charges + (p.charges === 1 ? " carga" : " cargas"); $("#act-ab").classList.toggle("empty", p.charges <= 0);
+    const maxC = AGENTS[p.agent].ab.charges, ab = $("#act-ab");
+    $("#ab-pips").innerHTML = Array.from({ length: maxC }, (_, i) => "<i" + (i < p.charges ? "" : ' class="off"') + "></i>").join("");
+    ab.classList.toggle("empty", p.charges <= 0); ab.classList.toggle("ready", p.charges > 0 && S.phase === "live" && p.alive);
+    const rl = $("#act-reload"); rl.classList.toggle("on", p.reloading); rl.classList.toggle("need", !p.reloading && p.ammo === 0);
     $("#act-buy").hidden = S.phase !== "buy";
     $("#sb-me").textContent = M.score.me; $("#sb-opp").textContent = M.score.opp;
     $("#sb-time").textContent = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"); $("#sb-phase").textContent = phase;
@@ -1279,7 +1488,8 @@ const GAME = (() => {
       const k = e.key.toLowerCase();
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "shift", "r", "e", "q", "b"].includes(k)) e.preventDefault();
       if (input.keys.has(k)) return; input.keys.add(k);
-      if (k === "e" || k === "q") useAbility();
+      if (k === "q" && S && S.phase === "buy") quickBuy();
+      else if (k === "e" || k === "q") useAbility();
       else if (k === "r" && S && S.p.alive) startReload(S.p, now());
       else if (k === "b") $("#act-buy").click();
       else if (BUYKEYS[k] && S && S.phase === "buy") buy(BUYKEYS[k]);
@@ -1325,8 +1535,10 @@ const GAME = (() => {
   }
   // el mouse sigue apuntando aunque la cámara se mueva
   setInterval(() => { if (input && input.mouseScreen && S) { const r = cv.getBoundingClientRect(); input.mouse = toWorld(input.mouseScreen.x + r.left, input.mouseScreen.y + r.top); } }, 30);
-  $("#act-ab").addEventListener("pointerdown", (e) => { e.preventDefault(); useAbility(); });
-  $("#act-reload").addEventListener("pointerdown", (e) => { e.preventDefault(); if (S && S.p.alive) startReload(S.p, now()); });
+  function tapFx(el) { el.classList.remove("tap"); void el.offsetWidth; el.classList.add("tap"); setTimeout(() => el.classList.remove("tap"), 360); buzz(12); }
+  $("#act-ab").addEventListener("pointerdown", (e) => { e.preventDefault(); tapFx(e.currentTarget); useAbility(); });
+  $("#act-reload").addEventListener("pointerdown", (e) => { e.preventDefault(); tapFx(e.currentTarget); if (S && S.p.alive) startReload(S.p, now()); });
+  $("#act-buy").addEventListener("pointerdown", (e) => tapFx(e.currentTarget));
   $("#g-exit").addEventListener("click", () => {
     if (!M) return close();
     if (M.result) return close();
@@ -1347,11 +1559,32 @@ const GAME = (() => {
     if (mode === "bot") { goFullscreen(); start({ mode: "bot", diff, agent: agentId, oppNick: "BOT " + diff.toUpperCase(), oppAgent: "rafaga", bg: NET.searching() }); }
     else { openSelect("online"); goFullscreen(); NET.search(); }
   });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && input) { input.keys.clear(); input.firing = false; } });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (M && online() && !M.result) M.hiddenAt = now(); return; }
+    if (input) { input.keys.clear(); input.firing = false; }
+    if (M && online() && !M.result && M.hiddenAt) {
+      const away = now() - M.hiddenAt; M.hiddenAt = 0;
+      if (M.lastStateAt) M.lastStateAt = Math.max(M.lastStateAt, now() - 2000); // no culpar al rival por nuestra pausa
+      if (away > 20000) { // saliste de la partida mucho tiempo: cuenta como que te fuiste
+        M.result = { won: false }; submit(false, false, true);
+        noResultLeft("Saliste de la partida más de 20 segundos.");
+      }
+    }
+  });
+  function noResultLeft(why) {
+    if (S) S.phase = "end"; setTimeout(() => NET.close(), 400);
+    const end = $("#end"); end.hidden = false; end.className = "end lose";
+    $("#end-kicker").textContent = "Derrota por desconexión"; $("#end-title").textContent = "Derrota";
+    $("#end-me").textContent = M.score.me; $("#end-opp").textContent = M.score.opp; $("#end-vs").textContent = why;
+    $("#end-stats").innerHTML = ""; $("#end-pts").textContent = "Mantené el juego abierto hasta terminar.";
+    $("#end-rematch").hidden = true; $("#end-rematch-btn").hidden = true; $("#end-again").textContent = "Nuevo rival";
+  }
 
   setTimeout(flushPending, 2500);
   if (window.GC_DEBUG) window.__gc = { state: () => ({ M, S }) };
-  return { start, onNet, opponentLeft, drawGun, active: () => !!M && !$("#game").hidden };
+  return { start, onNet, opponentLeft, drawGun,
+    connectionLost: () => noResult("Conexión interrumpida", "No se pudo recuperar la partida. Volvé a buscar rival."),
+    active: () => !!M && !$("#game").hidden };
 })();
 
 /* =========================================================

@@ -1,10 +1,10 @@
 import { pipeline, toObj, send, fail, ready, RANK, stats } from "./_db.js";
 
-const ADMIN_KEY = process.env.ADMIN_KEY || "gamingcity2026";
-
 export default async function handler(req, res) {
-  const key = req.headers["x-admin-key"] || (req.query && req.query.key);
-  if (key !== ADMIN_KEY) return send(res, 401, { ok: false, error: "Clave incorrecta" });
+  const adminKey = process.env.ADMIN_KEY;
+  if (!adminKey) return send(res, 503, { ok: false, error: "Configurá ADMIN_KEY en el servidor para habilitar el panel." });
+  const key = req.headers["x-admin-key"];
+  if (key !== adminKey) return send(res, 401, { ok: false, error: "Clave incorrecta" });
   if (!ready()) return send(res, 503, { ok: false, error: "Falta conectar la base de datos (Upstash Redis) en Vercel." });
   try {
     if (req.method === "POST") {
