@@ -17,13 +17,22 @@ export default async function handler(req, res) {
       const p = toObj(raw);
       if (!p.nick) return send(res, 404, { ok: false, error: "No encontramos tu registro" });
       return send(res, 200, {
-        ok: true, nick: p.nick, ig: p.ig || "", ...stats(p),
+        ok: true, nick: p.nick, ig: p.ig || "", xh: p.xh || "", ...stats(p),
         rank: rank == null ? null : Number(rank) + 1, players: Number(count),
         history: hist.map((h) => { try { return JSON.parse(h); } catch { return null; } }).filter((h) => h && h.mode),
       });
     }
     if (req.method !== "POST") return send(res, 405, { ok: false, error: "Método no permitido" });
     const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    // preferencias del jugador (la mira): solo se guarda un código corto y validado
+    if (b.action === "prefs") {
+      const pid = cleanPid(b.pid), xh = String(b.xh || "");
+      if (pid.length < 8 || !/^GC1(-[0-9a-f.]{1,7}){21}$/i.test(xh)) return send(res, 400, { ok: false, error: "Preferencias inválidas" });
+      const [nick] = await pipeline([["HGET", "gc:p:" + pid, "nick"]]);
+      if (!nick) return send(res, 404, { ok: false, error: "No encontramos tu registro" });
+      await pipeline([["HSET", "gc:p:" + pid, "xh", xh]]);
+      return send(res, 200, { ok: true });
+    }
     const ig = cleanIg(b.ig), pin = String(b.pin || "");
     if (!/^[a-z0-9._]{1,30}$/.test(ig)) return send(res, 400, { ok: false, error: "Usuario de Instagram inválido" });
     if (!/^\d{4}$/.test(pin)) return send(res, 400, { ok: false, error: "El PIN tiene que ser de 4 números" });

@@ -26,6 +26,16 @@ export default async function handler(req, res) {
     const base = (won ? (forfeit ? 50 : 100) : 0) + 10 * rw;
     const pts = Math.round(base * (mode === "online" ? 1 : BOT[diff]));
     const key = "gc:p:" + pid;
+    // cada partida se cuenta una sola vez aunque el celular reintente el envío
+    const mid = String(b.mid || "").replace(/[^a-zA-Z0-9-_:]/g, "").slice(0, 80);
+    if (mid) {
+      const [first, prev] = await pipeline([["SET", "gc:sub:" + pid + ":" + mid, "1", "NX", "EX", "172800"], ["GET", "gc:subr:" + pid + ":" + mid]]);
+      if (first !== "OK") {
+        const [rank, count, tot] = await pipeline([["ZREVRANK", RANK, pid], ["ZCARD", RANK], ["HGET", key, "total"]]);
+        return send(res, 200, { ok: true, duplicate: true, pts: prev ? Number(prev) : 0, total: Number(tot || 0), rank: rank == null ? null : Number(rank) + 1, players: Number(count) });
+      }
+      await pipeline([["SET", "gc:subr:" + pid + ":" + mid, String(pts), "EX", "172800"]]);
+    }
     const [raw] = await pipeline([["HGETALL", key]]);
     const p = toObj(raw);
     const ptsOnline = num(p.pts_online) + (mode === "online" ? pts : 0);

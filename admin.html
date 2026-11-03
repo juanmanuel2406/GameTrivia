@@ -89,6 +89,7 @@ td:first-child{font-family:var(--display);font-weight:900;font-size:20px}
     <div class="row" style="gap:14px"><img src="logo-rojo.png" alt="Gaming City"><span class="tagline">Panel del organizador</span></div>
     <div class="row" id="top-actions" hidden>
       <span class="tagline"><span class="live-dot"></span><span id="updated">—</span></span>
+      <span class="tagline" id="srv" title="Región del servidor y demora hasta la base de datos"></span>
       <button class="btn ghost small" id="csv">Descargar CSV</button>
       <button class="btn ghost small" id="logout">Salir</button>
     </div>
@@ -215,7 +216,9 @@ async function removeP(pid){
   try{ await call("POST",{action:"remove",pid}); await load(); }catch(e){ alertMsg(e.message); }
 }
 function alertMsg(t){ $("#updated").textContent=t; }
-function start(){
+const REG={gru1:"San Pablo",iad1:"Washington",sfo1:"San Francisco",cle1:"Cleveland",pdx1:"Portland",fra1:"Frankfurt",local:"local"};
+async function pingSrv(){ try{ const r=await fetch("/api/ping",{cache:"no-store"}); const j=await r.json(); $("#srv").textContent="Servidor: "+(REG[j.region]||j.region)+(j.dbMs!=null?" · base "+j.dbMs+" ms":""); }catch(e){} }
+function start(){ pingSrv();
   $("#login-view").hidden=true; $("#dash").hidden=false; $("#top-actions").hidden=false;
   load(); clearInterval(timer); timer=setInterval(load,5000);
 }

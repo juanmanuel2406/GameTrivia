@@ -5,11 +5,49 @@ import { pipeline, send, fail } from "./_db.js";
 // El primero queda esperando (host); el siguiente lo encuentra y se conecta a él (guest).
 const clean = (v, n = 60) => String(v || "").replace(/[^a-zA-Z0-9-_]/g, "").slice(0, n);
 
+// Emparejamiento atómico: todo el "buscar rival" ocurre en una sola operación dentro de la base,
+// así dos personas nunca pueden quedarse con el mismo rival ni emparejarse dos veces.
+const POLL_LUA = `
+local pid, peer, nick, now, private = ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4]), ARGV[5]
+redis.call('SET', 'gc:mq:alive:'..pid, peer, 'EX', 6)
+redis.call('ZADD', 'gc:mq:online', now, pid)
+redis.call('ZREMRANGEBYSCORE', 'gc:mq:online', 0, now - 8000)
+local mm = redis.call('GET', 'gc:mq:mm:'..peer)
+if mm then
+  redis.call('DEL', 'gc:mq:mm:'..peer, 'gc:mq:alive:'..pid)
+  redis.call('ZREM', 'gc:mq:online', pid)
+  return {'matched', mm}
+end
+if private == '1' then
+  redis.call('ZREM', 'gc:mq:online', pid)
+  return {'waiting', '0'}
+end
+for i = 1, 12 do
+  local raw = redis.call('LPOP', 'gc:mq:q2')
+  if not raw then break end
+  local epid, epeer, enick = string.match(raw, '^([^|]+)|([^|]+)|(.*)$')
+  if epid and epid ~= pid then
+    local alive = redis.call('GET', 'gc:mq:alive:'..epid)
+    if alive == epeer and not redis.call('GET', 'gc:mq:mm:'..epeer) then
+      redis.call('SET', 'gc:mq:mm:'..epeer, '{"role":"host","opp":{"pid":"'..pid..'","peer":"'..peer..'","nick":"'..nick..'"}}', 'EX', 30)
+      redis.call('DEL', 'gc:mq:alive:'..pid)
+      redis.call('ZREM', 'gc:mq:online', pid, epid)
+      return {'guest', epid, epeer, enick}
+    end
+  end
+end
+if redis.call('SET', 'gc:mq:inq:'..pid, '1', 'NX', 'EX', 4) then
+  redis.call('RPUSH', 'gc:mq:q2', pid..'|'..peer..'|'..nick)
+  redis.call('LTRIM', 'gc:mq:q2', -200, -1)
+end
+return {'waiting', tostring(redis.call('ZCARD', 'gc:mq:online'))}
+`;
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return send(res, 405, { ok: false, error: "Usá POST" });
   try {
     const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
-    const pid = clean(b.pid, 40), peer = clean(b.peer), nick = String(b.nick || "").replace(/[<>]/g, "").toUpperCase().slice(0, 14);
+    const pid = clean(b.pid, 40), peer = clean(b.peer), nick = String(b.nick || "").replace(/[<>"\\|]/g, "").toUpperCase().slice(0, 14);
     if (pid.length < 8) return send(res, 400, { ok: false, error: "Datos inválidos" });
     const now = Date.now();
 
@@ -79,7 +117,22 @@ export default async function handler(req, res) {
       await pipeline([["DEL", "gc:mq:alive:" + pid], ["ZREM", "gc:mq:online", pid]]);
       return send(res, 200, { ok: true });
     }
+    // Victoria por abandono: si los dos se cortan, solo el primero que la reclama gana (nunca dos ganadores)
+    if (b.action === "claim") {
+      if (!room) return send(res, 400, { ok: false, error: "Datos inválidos" });
+      const [ok, owner] = await pipeline([["SET", "gc:ff:" + room, pid, "NX", "EX", "7200"], ["GET", "gc:ff:" + room]]);
+      return send(res, 200, { ok: true, winner: ok === "OK" || owner === pid });
+    }
     if (b.action !== "poll" || !peer) return send(res, 400, { ok: false, error: "Datos inválidos" });
+
+    try {
+      const [r] = await pipeline([["EVAL", POLL_LUA, "0", pid, peer, nick, String(now), b.private ? "1" : "0"]]);
+      if (r[0] === "matched") return send(res, 200, { ok: true, status: "matched", ...JSON.parse(r[1]) });
+      if (r[0] === "guest") return send(res, 200, { ok: true, status: "matched", role: "guest", opp: { pid: r[1], peer: r[2], nick: r[3] } });
+      return send(res, 200, { ok: true, status: "waiting", searching: Number(r[1]) || 0 });
+    } catch (e) {
+      if (e.message === "no_db") throw e; // si la base no acepta scripts, sigue el método anterior
+    }
 
     const me = JSON.stringify({ pid, peer, nick, t: now });
     const [, mm] = await pipeline([

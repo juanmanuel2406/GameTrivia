@@ -42,6 +42,9 @@ export default async function handler(req, res) {
     username, credential,
   });
 
+  // Open Relay con credenciales públicas fijas (respaldo)
+  servers.push({ urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443?transport=tcp"], username: "openrelayproject", credential: "openrelayproject" });
+
   res.setHeader("Cache-Control", "public, max-age=900");
   res.status(200).json({ ok: true, iceServers: servers });
 }

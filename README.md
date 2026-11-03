@@ -4,7 +4,9 @@ Duelo 1v1 online estilo Valorant para el evento de Gaming City. Es un sitio est�
 
 ## El juego
 - **4 agentes**, con una habilidad cada uno: Ráfaga (dash), Niebla (humo), Bastión (muro) y Pulso (radar).
-- **Fase de compra** en cada ronda, con créditos al estilo Valorant: Classic, Sheriff, Spectre, Vandal, Operator, escudo liviano y escudo pesado. Si sobrevivís, conservás arma y escudo.
+- **Arsenal por columnas** (como la tienda de Valorant) con siluetas propias: Classic, Ghost, Sheriff, Stinger, Spectre, Phantom, Vandal, Marshal, Operator, escudo liviano y pesado, ficha de cada arma y compra rápida (Q). Atajos 1–9, Z, X. Si sobrevivís, conservás arma y escudo.
+- **Rangos** por puntos: Hierro → Inmortal (3 niveles cada uno) y Radiante para el #1 del evento. Emblemas propios (no son los de Riot), con animación al subir.
+- **Mira personalizable**: color, líneas internas/externas, punto, contorno, mira dinámica (muestra la dispersión real de tus balas), presets y código para compartir (GC1-…). Se guarda en la cuenta. Se dibuja en una capa propia a la resolución real de la pantalla, alineada a píxel, y se actualiza con `pointerrawupdate`; opción de mouse bloqueado (Pointer Lock con movimiento crudo) y sensibilidad. En celular la mira va donde apunta el arma y la ayuda de puntería es regulable.
 - **Primero a 7 rondas.** A las 6 rondas se cambia de lado y se reinician los créditos. Con 6–6 se juega una ronda decisiva con 5000 créditos.
 - **Niebla de guerra:** solo ves al rival si hay línea de visión (paredes, muros y humos la cortan). Si el rival corre, se ven sus pasos.
 - Controles para celular (dos pulgares, toque rápido = tiro, asistencia de puntería, vibración) y para compu (WASD + mouse). Se puede instalar como app (pantalla completa y horizontal).
@@ -27,6 +29,15 @@ Empareja a dos personas que estén buscando rival al mismo tiempo, desde cualqui
 - Primera visita: cartel para seguir a **@gamingcitycomputacion** y **@gamingcitybelgrano**. Después el jugador se registra con apodo, Instagram y un PIN.
 - **Puntos (una sola fórmula, todo suma al mismo total):** victoria 100 (50 si el rival abandona) + 10 por ronda ganada; derrota, 10 por ronda ganada. Contra el bot se multiplica por rango: Radiante ×1, Oro ×0,5, Hierro ×0,25.
 - **Panel del organizador:** `/admin.html`, con clave `ADMIN_KEY` (por defecto `gamingcity2026`). Tiene podio, jugadores con su Instagram, últimas partidas, CSV y reinicio.
+
+## Servidor cerca de Argentina
+`vercel.json` fija las funciones en **San Pablo (gru1)**, la región de Vercel más cercana. Para que la base de datos también esté cerca, la base de Upstash tiene que estar en **sa-east-1 (São Paulo)**. El panel `/admin.html` muestra dónde corre el servidor y cuánto tarda la base de datos: si muestra más de ~30 ms, conviene crear la base en São Paulo y reconectarla.
+
+## Online sin duplicados ni partidas trabadas
+- El emparejamiento es una sola operación atómica en Redis (script Lua): nadie puede quedar con dos rivales.
+- Cada resultado lleva un id de partida: aunque el celular reintente el envío, se cuenta una sola vez.
+- Si se corta un jugador (celular bloqueado, sin señal), el otro gana a los 8 s. Si se cortan los dos, el servidor decide un único ganador.
+- Si se pierde el aviso de fin de ronda, el marcador del host lo repone solo.
 
 ## Deploy
 Vercel con **Upstash for Redis** conectado desde Storage. Cada push a `main` publica la página.
